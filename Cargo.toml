@@ -1,0 +1,17 @@
+[package]
+name = "cluster-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# openssl = {version = "*", features = ["vendored"]}
+bincode = "*"
+clap = {version = "*", features = ["derive"]}
+env_logger = "*"
+hex = "*"
+log = "*"
+openssl = {version = "*"}
+serde = {version = "*", features = ["derive"]}
+toml = "*"
