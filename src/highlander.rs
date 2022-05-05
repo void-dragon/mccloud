@@ -65,37 +65,33 @@ pub struct GameResult {
     pub sign: Vec<u8>,
 }
 
+fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>>, winner: &PubKey) -> [u8; 32] {
+    let mut sha = Sha256::new();
+
+    for id in tree {
+        if let Some(ref id) = id {
+            sha.update(id);
+        }
+    }
+
+    for (id ,v) in roster {
+        sha.update(id);
+        sha.update(v);
+    }
+
+    sha.update(winner);
+
+    sha.finish()
+}
+
 impl GameResult {
     fn build(tree: Vec<Option<PubKey>>, roster: &HashMap<PubKey, Option<Vec<u8>>>, key: &Key) -> Self {
         let roster: HashMap<PubKey, Vec<u8>> = roster
             .iter()
             .map(|k| (k.0.clone(), k.1.as_ref().unwrap().clone()))
             .collect();
-        // for v in &tree {
-        //     if let Some(ref v) = v {
-        //         println!("{}", hex::encode(v));
-        //     }
-        //     else {
-        //         println!("None");
-        //     }
-        // }
         let winner = tree.last().unwrap().clone().unwrap();
-        let mut sha = Sha256::new();
-
-        for id in &tree {
-            if let Some(ref id) = id {
-                sha.update(id);
-            }
-        }
-
-        for (id ,v) in &roster {
-            sha.update(id);
-            sha.update(v);
-        }
-
-        sha.update(&winner);
-
-        let hash = sha.finish();
+        let hash = game_result_hash(&tree, &roster, &winner);
         let sign = key.sign(&hash).unwrap();
 
         Self {
@@ -128,9 +124,24 @@ impl Highlander {
         }
     }
 
-    pub fn add_game(&mut self, game: Game) {
-        if self.roster.contains_key(&game.author) {
-            self.roster.insert(game.author, Some(game.rounds));
+    pub fn add_game(&mut self, game: Game) -> bool {
+        let count = self.roster.len();
+        let count = count + count % 2;
+        let count = (count as f64).log2() as usize;
+
+        if game.rounds.len() == count {
+            if self.roster.contains_key(&game.author) {
+                self.roster.insert(game.author, Some(game.rounds));
+                true
+            }
+            else {
+                log::error!("game author is not part of the game");
+                false
+            }
+        }
+        else {
+            log::error!("round length for game does not match");
+            false
         }
     }
 
@@ -204,6 +215,9 @@ impl Highlander {
             count = count / 2;
             lvl += 1;
         }
+
+        let winner = tree.last().unwrap().clone().unwrap();
+        log::info!("winner {}", hex::encode(&winner));
 
         let result = GameResult::build(tree, &self.roster, key);
 

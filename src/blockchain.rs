@@ -40,6 +40,31 @@ pub struct Block {
     sign: Vec<u8>,
 }
 
+fn block_hash(data: &Vec<Data>, game: &GameResult) -> [u8; 32] {
+    let mut sha = Sha256::new();
+
+    for d in data {
+        sha.update(&d.data);
+        sha.update(&d.author);
+        sha.update(&d.sign);
+    }
+
+    for id in &game.tree {
+        if let Some(ref id) = id {
+            sha.update(id);
+        }
+    }
+
+    for (id ,v) in &game.roster {
+        sha.update(id);
+        sha.update(v);
+    }
+
+    sha.update(&game.winner);
+
+    sha.finish()
+}
+
 impl Block {
     pub fn validate(&self) -> bool {
         for d in &self.data {
@@ -48,29 +73,9 @@ impl Block {
             }
         }
 
-        let mut sha = Sha256::new();
+        let hash = block_hash(&self.data, &self.game);
 
-        for d in &self.data {
-            sha.update(&d.data);
-            sha.update(&d.author);
-            sha.update(&d.sign);
-        }
-
-        for id in &self.game.tree {
-            if let Some(ref id) = id {
-                sha.update(id);
-            }
-        }
-
-        for (id ,v) in &self.game.roster {
-            sha.update(id);
-            sha.update(v);
-        }
-
-        sha.update(&self.game.winner);
-        let data = sha.finish();
-
-        match Key::validate(&data, &self.author, &self.sign) {
+        match Key::validate(&hash, &self.author, &self.sign) {
             Ok(valid) => valid,
             Err(e) => {
                 log::error!("unvalid block: {}", e);
@@ -96,29 +101,8 @@ impl Blockchain {
     }
 
     pub fn generate_new_block(&mut self, game: GameResult, key: &Key) -> Block {
-        let mut sha = Sha256::new();
-
-        for d in &self.bucket {
-            sha.update(&d.data);
-            sha.update(&d.author);
-            sha.update(&d.sign);
-        }
-
-        for id in &game.tree {
-            if let Some(ref id) = id {
-                sha.update(id);
-            }
-        }
-
-        for (id ,v) in &game.roster {
-            sha.update(id);
-            sha.update(v);
-        }
-
-        sha.update(&game.winner);
-        let data = sha.finish();
-
-        let sign = key.sign(&data).unwrap();
+        let hash = block_hash(&self.bucket, &game);
+        let sign = key.sign(&hash).unwrap();
 
         let block = Block {
             game,

@@ -13,12 +13,13 @@ pub struct ClientConfig {
 pub struct Config {
     pub host: String,
     pub port: u16,
+    pub thin: bool,
     pub clients: Vec<ClientConfig>
 }
 
 impl Config {
-    pub fn load(filename: &str) -> Result<Config, Box<dyn Error>> {
-        let data = std::fs::read(filename)?;
+    pub async fn load(filename: &str) -> Result<Config, Box<dyn Error>> {
+        let data = tokio::fs::read(filename).await?;
         Ok(toml::from_slice(&data)?)
     }
 }
