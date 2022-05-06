@@ -37,6 +37,7 @@ async fn main() {
         thin: true,
         host: "127.0.0.1".to_string(),
         port: 9999,
+        folder: "user".to_string(),
         clients: vec![ClientConfig {
             host: args.host.clone(),
             port: args.port,

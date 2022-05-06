@@ -1,14 +1,18 @@
 use std::{pin::Pin, future::Future};
 
-use crate::network::peer::{Peer, ClientPtr};
+use crate::{network::peer::{Peer, ClientPtr}, config::Config};
 
 
 pub trait Handler: Send + Sync {
     type Msg;
 
-    fn new() -> Self;
+    fn new(config: &Config) -> Self;
 
     fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a;
+
+    fn shutdown<'a>(&'a self, peer: Peer<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a;
 

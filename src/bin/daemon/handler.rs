@@ -9,7 +9,7 @@ use cluster_rs::{
     network::{
         peer::{ClientPtr, Peer},
     },
-    messages::Messages, handler::Handler
+    messages::Messages, handler::Handler, config::Config
 };
 
 #[derive(PartialEq, Clone, Copy)]
@@ -98,11 +98,11 @@ impl DaemonHandler {
 impl Handler for DaemonHandler {
     type Msg = Messages;
 
-    fn new() -> Self {
+    fn new(config: &Config) -> Self {
         Self {
             state: Arc::new(Mutex::new(State::Idle)),
             highlander: Arc::new(Mutex::new(Highlander::new())),
-            blockchain: Arc::new(Mutex::new(Blockchain::new())),
+            blockchain: Arc::new(Mutex::new(Blockchain::new(&config.folder))),
         }
     }
     
@@ -114,6 +114,16 @@ impl Handler for DaemonHandler {
         }
 
         Box::pin(run(self, peer, client)) 
+    }
+
+    fn shutdown<'a>(&'a self, peer: Peer<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a {
+        async fn run(_self: &DaemonHandler, _peer: Peer<DaemonHandler>) {
+            _self.blockchain.lock().await.save_index();            
+        }
+
+        Box::pin(run(self, peer)) 
     }
 
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>

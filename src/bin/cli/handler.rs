@@ -6,17 +6,17 @@ use cluster_rs::{
         peer::{ClientPtr, Peer},
     },
     messages::Messages,
-    handler::Handler, blockchain::Data
+    handler::Handler, blockchain::Data, config::Config
 };
 
 
-macro_rules! check {
-    ($ex:expr) => {
-        if let Err(e) = $ex {
-            log::error!("{}", e);
-        }
-    };
-}
+// macro_rules! check {
+//     ($ex:expr) => {
+//         if let Err(e) = $ex {
+//             log::error!("{}", e);
+//         }
+//     };
+// }
 
 #[derive(Clone)]
 pub struct CliHandler {
@@ -28,9 +28,8 @@ impl CliHandler {
 impl Handler for CliHandler {
     type Msg = Messages;
 
-    fn new() -> Self {
-        Self {
-        }
+    fn new(_config: &Config) -> Self {
+        Self { }
     }
 
     fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
@@ -48,11 +47,19 @@ impl Handler for CliHandler {
         Box::pin(run(self, peer, client)) 
     }
 
+    fn shutdown<'a>(&'a self, peer: Peer<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a {
+        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>) {
+        }
+
+        Box::pin(run(self, peer)) 
+    }
     
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, peer: Peer<CliHandler>, client: ClientPtr, msg: Messages) {
+        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Messages) {
             match msg {
                 _ => {}
                 // Messages::Play { game } => {

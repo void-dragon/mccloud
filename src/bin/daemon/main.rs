@@ -26,6 +26,4 @@ async fn main() {
     if let Err(e) = peer.listen().await {
         log::error!("{}", e);
     }
-
-    log::info!("-- done --");
 }

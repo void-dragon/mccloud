@@ -14,7 +14,7 @@ use tokio::{
         tcp::OwnedWriteHalf
     },
     io::{self, AsyncWriteExt},
-    sync::Mutex,
+    sync::Mutex, select,
 };
 
 use crate::{
@@ -59,12 +59,14 @@ where
     T::Msg: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
 {
     pub fn new(config: Config) -> Self {
+        let handler = Arc::new(T::new(&config));
+
         Self {
             key: Arc::new(Key::new().unwrap()),
             config: config,
             clients: Arc::new(Mutex::new(HashMap::new())),
             all_known: Arc::new(Mutex::new(HashSet::new())),
-            handler: Arc::new(T::new()),
+            handler,
         }
     }
 
@@ -83,9 +85,25 @@ where
         }
 
         loop {
-            let (socket, addr) = lst.accept().await?;
-            self.accept(socket, addr);
+            select! {
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("begin shutdown");
+                    self.handler.shutdown(self.clone()).await;
+                    break
+                }
+                Ok((socket, addr)) = lst.accept() => {
+                    self.accept(socket, addr);
+                }
+            }
         }
+
+        let clients = self.clients.lock().await;
+        for cl in clients.values() {
+            let mut w = cl.writer.lock().await;
+            w.shutdown().await.unwrap();
+        }
+
+        Ok(())
     }
 
     fn accept(&self, mut stream: TcpStream, addr: SocketAddr) {

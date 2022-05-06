@@ -34,7 +34,11 @@ pub fn block_hash(parent: &Vec<u8>, author: &Vec<u8>, data: &Vec<Data>, game: &G
         }
     }
 
-    for (id ,v) in &game.roster {
+    // if we do not sort the keys, the hashing will be diffirent on other machines
+    let mut roster_keys: Vec<&PubKey> = game.roster.keys().collect();
+    roster_keys.sort();
+    for id in roster_keys {
+        let v = &game.roster[id];
         sha.update(id);
         sha.update(v);
     }
@@ -82,6 +86,11 @@ impl Block {
             }
         }
         else {
+            log::error!(
+                "hashes do not match:\nhash     : {}\ncalc hash: {}",
+                hex::encode(&self.hash),
+                hex::encode(hash),
+            );
             false
         }
     }
