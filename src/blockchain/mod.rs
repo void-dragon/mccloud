@@ -35,7 +35,7 @@ impl Blockchain {
 
         let idxname = folder.join("bc.idx");
 
-        let index = if idxname.exists() {
+        let index: HashMap<Vec<u8>, (u64, u64)> = if idxname.exists() {
             let file = File::open(idxname).unwrap();
             bincode::deserialize_from(file).unwrap()
         }
@@ -43,10 +43,21 @@ impl Blockchain {
             HashMap::new()
         };
         
+        let mut hh = Vec::new();
+        let mut hidx = 0;
+        for (h, p) in index.iter() {
+            if p.0 >= hidx {
+                hidx = p.0;
+                hh = h.clone();
+            }
+        }
+        
+        log::debug!("highest hash {}", hex::encode(&hh));
+
         Self {
             folder,
             bucket: Vec::new(),
-            highest_hash: Vec::new(),
+            highest_hash: hh,
             index,
         }
     }
@@ -90,6 +101,8 @@ impl Blockchain {
     }
 
     fn save_block(&mut self, block: &Block) {
+        log::info!("save block {}", hex::encode(&block.hash));
+
         let filename = self.folder.join("bc.db");
         let mut file = OpenOptions::new()
             .create(true)
