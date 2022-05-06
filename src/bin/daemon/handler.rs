@@ -7,10 +7,9 @@ use cluster_rs::{
     highlander::{Highlander, Game},
     blockchain::{Blockchain, Data, Block},
     network::{
-        peer::{ClientPtr, Handler, Peer},
-        envelope::Envelope
+        peer::{ClientPtr, Peer},
     },
-    messages::Messages
+    messages::Messages, handler::Handler
 };
 
 #[derive(PartialEq, Clone, Copy)]
@@ -43,8 +42,7 @@ impl DaemonHandler {
         self.blockchain.lock().await.add_to_cache(data.clone());
 
         let msg = Messages::Share { data };
-        let env = Envelope::Message(msg);
-        check!(peer.broadcast_except(env, &client).await);
+        check!(peer.broadcast_except(msg.into(), &client).await);
 
         let mut state = self.state.lock().await;
 
@@ -59,8 +57,7 @@ impl DaemonHandler {
             hl.add_game(game.clone());
 
             let msg = Messages::Play { game };
-            let env = Envelope::Message(msg);
-            check!(peer.broadcast(env).await);
+            check!(peer.broadcast(msg.into()).await);
         }
     }
 
@@ -69,8 +66,7 @@ impl DaemonHandler {
         hl.add_game(game.clone());
 
         let msg = Messages::Play { game };
-        let env = Envelope::Message(msg);
-        check!(peer.broadcast_except(env, &client).await);
+        check!(peer.broadcast_except(msg.into(), &client).await);
 
         if hl.is_filled() {
             let result = hl.evaluate(&peer.key);
@@ -79,8 +75,7 @@ impl DaemonHandler {
                 log::info!("create new block");
                 let block = self.blockchain.lock().await.generate_new_block(result, &peer.key);
                 let msg = Messages::ShareBlock { block };
-                let env = Envelope::Message(msg);
-                check!(peer.broadcast(env).await);
+                check!(peer.broadcast(msg.into()).await);
                 *self.state.lock().await = State::Idle;
             }
             else {
@@ -95,8 +90,7 @@ impl DaemonHandler {
         self.blockchain.lock().await.add_new_block(block.clone());
 
         let msg = Messages::ShareBlock { block };
-        let env = Envelope::Message(msg);
-        check!(peer.broadcast_except(env, &client).await);
+        check!(peer.broadcast_except(msg.into(), &client).await);
         *self.state.lock().await = State::Idle;
     }
 }
@@ -112,6 +106,16 @@ impl Handler for DaemonHandler {
         }
     }
     
+    fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a {
+        async fn run(_self: &DaemonHandler, _peer: Peer<DaemonHandler>, _client: ClientPtr) {
+            
+        }
+
+        Box::pin(run(self, peer, client)) 
+    }
+
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {

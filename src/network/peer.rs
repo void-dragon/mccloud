@@ -2,7 +2,7 @@ use std::{
     net::SocketAddr,
     sync::Arc,
     collections::{HashMap, HashSet},
-    error::Error, future::Future, pin::Pin
+    error::Error,
 };
 
 use openssl::{rand::rand_bytes, symm};
@@ -20,17 +20,18 @@ use tokio::{
 use crate::{
     config::Config,
     key::{Key, PubKey},
-    network::envelope::Envelope,
+    network::envelope::Envelope, handler::Handler,
 };
 
 pub struct Client {
     pubkey: PubKey,
+    thin: bool,
     addr: SocketAddr,
     writer: Mutex<OwnedWriteHalf>,
     enc_aes_key: [u8; 32],
-    enc_iv: [u8; 32],
+    enc_iv: [u8; 16],
     dec_aes_key: [u8; 32],
-    dec_iv: [u8; 32],
+    dec_iv: [u8; 16],
 }
 
 pub type ClientPtr = Arc<Client>;
@@ -41,16 +42,6 @@ macro_rules! check {
             log::error!("{}", e);
         }
     };
-}
-
-pub trait Handler: Send + Sync {
-    type Msg;
-
-    fn new() -> Self;
-
-    fn handle<'a>( &'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
-    where
-        Self: Sync + 'a;
 }
 
 #[derive(Clone)]
@@ -65,7 +56,7 @@ pub struct Peer<T> where T: Handler + ?Sized {
 impl<T> Peer<T> 
 where 
     T: Handler + Clone + 'static,
-    T::Msg: Serialize + DeserializeOwned + Send + Sync
+    T::Msg: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
 {
     pub fn new(config: Config) -> Self {
         Self {
@@ -101,17 +92,21 @@ where
         let peer = (*self).clone();
 
         tokio::spawn(async move {
-            let greet = Envelope::<T::Msg>::Greeting { id: peer.key.public_key.clone() };
+            let greet = Envelope::<T::Msg>::Greeting { 
+                id: peer.key.public_key.clone(),
+                thin: peer.config.thin,
+            };
             greet.write(&mut stream).await.unwrap();
 
             let res = Envelope::<T::Msg>::read(&mut stream).await.unwrap();
-            if let Envelope::Greeting { id } = res {
-                log::info!("id: {}", hex::encode(&id));
+            if let Envelope::Greeting { id, thin } = res {
+                log::info!("id {}", hex::encode(&id));
                 let mut enc_aes = [0u8; 32];
-                let mut enc_iv = [0u8; 32];
+                let mut enc_iv = [0u8; 16];
                 rand_bytes(&mut enc_aes).unwrap();
                 rand_bytes(&mut enc_iv).unwrap();
 
+                // TODO sign key
                 let key_share = Envelope::<T::Msg>::AesKey { aes: enc_aes.clone(), iv: enc_iv.clone() };
                 key_share.write_ec(&mut stream, &id).await.unwrap();
 
@@ -122,14 +117,21 @@ where
                     let client = Arc::new(Client {
                         pubkey: id,
                         addr,
+                        thin,
                         writer: Mutex::new(writer),
                         enc_aes_key: enc_aes,
-                        enc_iv: iv,
+                        enc_iv: enc_iv,
                         dec_aes_key: aes,
                         dec_iv: iv,
                     });
 
                     peer.clients.lock().await.insert(client.addr.clone(), client.clone());
+
+                    peer.handler.init(peer.clone(), client.clone()).await;
+
+                    if !peer.config.thin {
+                        peer.send(client.clone(), Envelope::Announce { id: peer.key.public_key.clone() }).await.unwrap();
+                    }
 
                     loop {
                         let env = Envelope::read_aes(
@@ -186,9 +188,26 @@ where
         log::debug!("disconnect {}", hex::encode(&client.pubkey));
         self.all_known.lock().await.remove(&client.pubkey);
 
-        check!(self.broadcast(Envelope::Remove{id: client.pubkey.clone()}).await);
+        if !client.thin {
+            check!(self.broadcast(Envelope::Remove{id: client.pubkey.clone()}).await);
+        }
     }
     
+    pub async fn send(&self, client: ClientPtr, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
+        let data = bincode::serialize(&msg)?;
+        let cipher = symm::Cipher::aes_256_cbc();
+
+        let encrypted = symm::encrypt(cipher, &client.enc_aes_key, Some(&client.enc_iv), &data)?;
+
+        let size = (encrypted.len() as u32).to_be_bytes();
+
+        let mut writer = client.writer.lock().await;
+        writer.write(&size).await?;
+        writer.write_all(&encrypted).await?;
+
+        Ok(())
+    }
+
     pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
         let data = bincode::serialize(&msg)?;
         let cipher = symm::Cipher::aes_256_cbc();
@@ -229,6 +248,7 @@ where
     }
 
     async fn on_announce(&self, client: ClientPtr, id: PubKey) {
+        log::debug!("announce {}", hex::encode(&id));
         let already_known = self.all_known.lock().await.insert(id.clone());
         if already_known {
             log::debug!("propergate announce {}", hex::encode(&id));
@@ -237,11 +257,13 @@ where
     }
 
     async fn on_all_known(&self, all_known: Vec<PubKey>) {
+        log::debug!("allknown");
         let mut my_known = self.all_known.lock().await;
         my_known.extend(all_known);
     }
 
     async fn on_remove(&self, client: ClientPtr, id: PubKey) {
+        log::debug!("remove {}", hex::encode(&id));
         let already_known = self.all_known.lock().await.remove(&id);
         if already_known {
             log::debug!("propergate remove {}", hex::encode(&id));

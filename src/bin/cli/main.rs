@@ -3,7 +3,7 @@ use clap::Parser;
 use cluster_rs::{
     key::Key,
     network::peer::Peer,
-    config::Config
+    config::{Config, ClientConfig}
 };
 
 mod handler;
@@ -29,12 +29,18 @@ struct Args {
 async fn main() {
     let args = Args::parse();
 
+    let env = env_logger::Env::default().default_filter_or("debug");
+    env_logger::init_from_env(env);
+
     let _key = Key::load(&args.wallet).unwrap();
     let config = Config {
         thin: true,
         host: "127.0.0.1".to_string(),
         port: 9999,
-        clients: Vec::new(),
+        clients: vec![ClientConfig {
+            host: args.host.clone(),
+            port: args.port,
+        }],
     };
     let peer = Peer::<CliHandler>::new(config);
 

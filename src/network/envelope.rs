@@ -11,10 +11,10 @@ use tokio::io::{AsyncWriteExt, AsyncReadExt};
 
 use crate::key::{PubKey, Key};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Envelope<T> {
-    Greeting {id: PubKey },
-    AesKey {aes: [u8; 32], iv: [u8; 32]},
+    Greeting {id: PubKey, thin: bool },
+    AesKey {aes: [u8; 32], iv: [u8; 16]},
     AllKnown { all_known: Vec<PubKey>},
     Announce {id: PubKey},
     Remove {id: PubKey},
@@ -25,7 +25,7 @@ impl<M> Envelope<M>
 where
     M: Serialize + DeserializeOwned
 {
-    pub async fn write_aes<T: AsyncWriteExt + Unpin>(&self, writer: &mut T, aes: &[u8; 32], iv: &[u8; 32]) -> Result<(), Box<dyn Error>> {
+    pub async fn write_aes<T: AsyncWriteExt + Unpin>(&self, writer: &mut T, aes: &[u8; 32], iv: &[u8; 16]) -> Result<(), Box<dyn Error>> {
         let data = bincode::serialize(&self)?;
         let cipher = symm::Cipher::aes_256_cbc();
         let encrypted = symm::encrypt(cipher, aes, Some(iv), &data)?;
@@ -67,7 +67,7 @@ where
     }
 
     // pub async fn read_aes<T: AsyncReadExt + Unpin>(reader: &mut T, aes: &[u8; 32], iv: &[u8; 32]) -> Result<Self, Box<dyn Error + 'static>> {
-    pub async fn read_aes<T: AsyncReadExt + Unpin>(reader: &mut T, aes: &[u8; 32], iv: &[u8; 32]) -> Result<Self, anyhow::Error> {
+    pub async fn read_aes<T: AsyncReadExt + Unpin>(reader: &mut T, aes: &[u8; 32], iv: &[u8; 16]) -> Result<Self, anyhow::Error> {
         let mut size_bytes = [0; 4];
         reader.read_exact(&mut size_bytes).await?;
         let size = u32::from_be_bytes(size_bytes) as usize;
@@ -105,5 +105,11 @@ where
         reader.read_exact(&mut buffer).await?;
 
         Ok(bincode::deserialize(&buffer)?)
+    }
+}
+
+impl<M> From<M> for Envelope<M> {
+    fn from(m: M) -> Self {
+        Envelope::Message(m)
     }
 }

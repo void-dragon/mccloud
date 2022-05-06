@@ -36,7 +36,9 @@ impl Data {
 pub struct Block {
     game: GameResult,
     data: Vec<Data>,
+    /// The public key of the node which created the block.
     author: PubKey,
+    /// The sign for the [GameResult] and [Data] blocks.
     sign: Vec<u8>,
 }
 

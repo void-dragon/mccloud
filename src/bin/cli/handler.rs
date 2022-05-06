@@ -3,9 +3,10 @@ use std::{pin::Pin, future::Future};
 
 use cluster_rs::{
     network::{
-        peer::{ClientPtr, Handler, Peer},
+        peer::{ClientPtr, Peer},
     },
-    messages::Messages
+    messages::Messages,
+    handler::Handler, blockchain::Data
 };
 
 
@@ -31,12 +32,27 @@ impl Handler for CliHandler {
         Self {
         }
     }
+
+    fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a {
+        async fn run(_self: &CliHandler, peer: Peer<CliHandler>, client: ClientPtr) {
+            log::debug!("init");
+            let data = b"shrouble".to_vec();
+            let data = Data::build(&peer.key, data);
+            let msg = Messages::Share { data };
+            log::debug!("send data share");
+            peer.send(client, msg.into()).await.unwrap();
+        }
+
+        Box::pin(run(self, peer, client)) 
+    }
+
     
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
         async fn run(_self: &CliHandler, peer: Peer<CliHandler>, client: ClientPtr, msg: Messages) {
-            
             match msg {
                 _ => {}
                 // Messages::Play { game } => {
