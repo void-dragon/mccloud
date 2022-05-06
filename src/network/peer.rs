@@ -20,7 +20,10 @@ use tokio::{
 use crate::{
     config::Config,
     key::{Key, PubKey},
-    network::envelope::Envelope, handler::Handler,
+    network::{
+        envelope::Envelope,
+        handler::Handler,
+    },
 };
 
 pub struct Client {

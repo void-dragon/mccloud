@@ -8,8 +8,9 @@ use cluster_rs::{
     blockchain::{Blockchain, Data, Block},
     network::{
         peer::{ClientPtr, Peer},
+        handler::Handler,
     },
-    messages::Messages, handler::Handler, config::Config
+    messages::Messages, config::Config
 };
 
 #[derive(PartialEq, Clone, Copy)]

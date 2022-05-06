@@ -4,9 +4,11 @@ use std::{pin::Pin, future::Future};
 use cluster_rs::{
     network::{
         peer::{ClientPtr, Peer},
+        handler::Handler,
     },
     messages::Messages,
-    handler::Handler, blockchain::Data, config::Config
+    blockchain::Data,
+    config::Config
 };
 
 

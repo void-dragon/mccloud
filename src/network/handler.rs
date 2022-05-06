@@ -1,6 +1,9 @@
 use std::{pin::Pin, future::Future};
 
-use crate::{network::peer::{Peer, ClientPtr}, config::Config};
+use crate::{
+    network::peer::{Peer, ClientPtr},
+    config::Config
+};
 
 
 pub trait Handler: Send + Sync {
