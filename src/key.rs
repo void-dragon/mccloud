@@ -4,10 +4,8 @@ use openssl::{
     ec::{EcKey, EcGroup},
     pkey::{Private, PKey},
     nid::Nid,
-    ecdsa::EcdsaSig,
-    // rsa::{Rsa, Padding},
     sign::{Signer, Verifier},
-    hash::MessageDigest, encrypt::{Encrypter, Decrypter}, derive::Deriver
+    hash::MessageDigest, derive::Deriver
 };
 
 pub type PubKey = Vec<u8>;
@@ -24,9 +22,6 @@ impl Key {
         let group = EcGroup::from_curve_name(Nid::SECP256K1)?;
         let key = EcKey::generate(&group)?;
         let key = PKey::from_ec_key(key)?;
-        // let key = Rsa::generate(4096)?;
-        // let key = Rsa::generate(1024)?;
-        // let key = PKey::from_rsa(key)?;
         let pkey = key.public_key_to_der()?;
 
         Ok(Self {
@@ -46,7 +41,6 @@ impl Key {
         else {
             let data = std::fs::read(path)?;
             let key = PKey::private_key_from_der(&data)?;
-            // let key = EcKey::private_key_from_der(&data)?;
             let pkey = key.public_key_to_der()?;
 
             Ok(Self {
@@ -57,7 +51,6 @@ impl Key {
     }
 
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-        // let sign = EcdsaSig::sign(data, &self.private_key)?;
         let mut sign = Signer::new(MessageDigest::sha3_512(), &self.private_key)?;
         sign.update(&data)?;
         let sign = sign.sign_to_vec()?;
@@ -76,10 +69,9 @@ impl Key {
     pub fn shared_secret(&self, pubkey: &PubKey) -> Result<Vec<u8>, anyhow::Error> {
         let pkey = PKey::public_key_from_der(pubkey)?;
         let mut deriver = Deriver::new(&self.private_key)?;
-        deriver.set_peer(&pkey);
+        deriver.set_peer(&pkey)?;
 
         let buffer = deriver.derive_to_vec()?;
-        log::debug!("shared key {}", buffer.len());
 
         Ok(buffer)
     }
