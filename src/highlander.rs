@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use openssl::{rand::rand_bytes, sha::Sha256};
+use openssl::{rand::rand_bytes, sha::Sha512};
 use serde::{Serialize, Deserialize};
 
 use crate::key::{Key, PubKey};
@@ -50,23 +50,36 @@ impl Iterator for IntIter {
     }
 }
 
+///
+/// A game of a single node.
+/// 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Game {
+    /// The public key of the playing node.
     author: PubKey,
+    /// The signature over the player rounds.
     sign: Vec<u8>,
+    /// The choices of the node for the game rounds.
     rounds: Vec<u8>,
 }
 
+///
+/// The final game result to be shared.
+/// 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GameResult {
+    /// The game tree of the matches.
     pub tree: Vec<Option<PubKey>>,
+    /// The single nodes and their choices.
     pub roster: HashMap<PubKey, Vec<u8>>,
+    /// The winner and author of this game result.
     pub winner: PubKey,
+    /// The signature by the winner.
     pub sign: Vec<u8>,
 }
 
-fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>>, winner: &PubKey) -> [u8; 32] {
-    let mut sha = Sha256::new();
+fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>>, winner: &PubKey) -> [u8; 64] {
+    let mut sha = Sha512::new();
 
     for id in tree {
         if let Some(ref id) = id {
@@ -91,8 +104,14 @@ impl GameResult {
             .map(|k| (k.0.clone(), k.1.as_ref().unwrap().clone()))
             .collect();
         let winner = tree.last().unwrap().clone().unwrap();
-        let hash = game_result_hash(&tree, &roster, &winner);
-        let sign = key.sign(&hash).unwrap();
+
+        let sign = if key.public_key == winner {
+            let hash = game_result_hash(&tree, &roster, &winner);
+            key.sign(&hash).unwrap()
+        }
+        else {
+            Vec::new()
+        };
 
         Self {
             tree,
@@ -103,6 +122,9 @@ impl GameResult {
     }
 }
 
+///
+/// An abstraction of the Highlander algorithm.
+/// 
 pub struct Highlander {
     roster: HashMap<PubKey, Option<Vec<u8>>>,
 }

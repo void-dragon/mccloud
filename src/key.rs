@@ -10,9 +10,14 @@ use openssl::{
 
 pub type PubKey = Vec<u8>;
 
+///
+/// A convenience abstraction over the elliptic curve algorithms provided by OpenSSL.
+/// 
 #[derive(Clone)]
 pub struct Key {
+    /// The private key.
     pub private_key: PKey<Private>,
+    /// The bytes of the public key in DER format.
     pub public_key: PubKey,
 }
 
