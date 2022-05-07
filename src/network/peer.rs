@@ -5,7 +5,7 @@ use std::{
     error::Error,
 };
 
-use openssl::{rand::rand_bytes, symm};
+use openssl::symm;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     net::{
@@ -31,10 +31,7 @@ pub struct Client {
     thin: bool,
     addr: SocketAddr,
     writer: Mutex<OwnedWriteHalf>,
-    enc_aes_key: [u8; 32],
-    enc_iv: [u8; 16],
-    dec_aes_key: [u8; 32],
-    dec_iv: [u8; 16],
+    shared: Vec<u8>,
 }
 
 pub type ClientPtr = Arc<Client>;
@@ -122,83 +119,70 @@ where
             let res = Envelope::<T::Msg>::read(&mut stream).await.unwrap();
             if let Envelope::Greeting { id, thin } = res {
                 log::info!("id {}", hex::encode(&id));
-                let mut enc_aes = [0u8; 32];
-                let mut enc_iv = [0u8; 16];
-                rand_bytes(&mut enc_aes).unwrap();
-                rand_bytes(&mut enc_iv).unwrap();
+                let (mut reader, writer) = stream.into_split();
+                let shared = peer.key.shared_secret(&id).unwrap();
+                let client = Arc::new(Client {
+                    pubkey: id,
+                    addr,
+                    thin,
+                    writer: Mutex::new(writer),
+                    shared,
+                });
 
-                // TODO sign key
-                let key_share = Envelope::<T::Msg>::AesKey { aes: enc_aes.clone(), iv: enc_iv.clone() };
-                key_share.write_ec(&mut stream, &id).await.unwrap();
+                peer.clients.lock().await.insert(client.addr.clone(), client.clone());
 
-                let res = Envelope::<T::Msg>::read_ec(&mut stream, &peer.key).await.unwrap();
-                if let Envelope::AesKey { aes, iv } = res {
+                peer.handler.init(peer.clone(), client.clone()).await;
 
-                    let (mut reader, writer) = stream.into_split();
-                    let client = Arc::new(Client {
-                        pubkey: id,
-                        addr,
-                        thin,
-                        writer: Mutex::new(writer),
-                        enc_aes_key: enc_aes,
-                        enc_iv: enc_iv,
-                        dec_aes_key: aes,
-                        dec_iv: iv,
-                    });
-
-                    peer.clients.lock().await.insert(client.addr.clone(), client.clone());
-
-                    peer.handler.init(peer.clone(), client.clone()).await;
-
-                    if !peer.config.thin {
-                        peer.send(client.clone(), Envelope::Announce { id: peer.key.public_key.clone() }).await.unwrap();
+                if !peer.config.thin {
+                    let res = peer.send(client.clone(), Envelope::Announce { id: peer.key.public_key.clone() }).await;
+                    if let Err(e) = res {
+                        println!("{}", e);
                     }
+                }
 
-                    loop {
-                        let env = Envelope::read_aes(
-                            &mut reader, 
-                            &client.dec_aes_key, 
-                            &client.dec_iv
-                        ).await;
+                loop {
+                    let env = Envelope::read_aes(
+                        &mut reader, 
+                        &client.shared
+                    ).await;
 
-                        match env {
-                            Ok(env) => {
-                                match env {
-                                    Envelope::AllKnown { all_known } => {
-                                        peer.on_all_known(all_known).await;
-                                    }
-                                    Envelope::Announce { id } => {
-                                        peer.on_announce(client.clone(), id).await;
-                                    }
-                                    Envelope::Remove { id } => {
-                                        peer.on_remove(client.clone(), id).await;
-                                    }
-                                    Envelope::Message(msg) => {
-                                        peer.handler.handle(peer.clone(), client.clone(), msg).await;
-                                    }
-                                    _ => {}
+                    match env {
+                        Ok(env) => {
+                            match env {
+                                Envelope::AllKnown { all_known } => {
+                                    peer.on_all_known(all_known).await;
                                 }
-                            }
-                            Err(e) => {
-                                use tokio::io::ErrorKind;
-                                if let Some(e) = e.downcast_ref::<tokio::io::Error>() {
-                                    match e.kind() {
-                                        ErrorKind::UnexpectedEof | ErrorKind::BrokenPipe => {}
-                                        _ => {
-                                            log::error!("{}", e);
-                                        }
-                                    }
+                                Envelope::Announce { id } => {
+                                    peer.on_announce(client.clone(), id).await;
                                 }
-                                else {
-                                    log::error!("{}", e);
+                                Envelope::Remove { id } => {
+                                    peer.on_remove(client.clone(), id).await;
                                 }
-                                break
+                                Envelope::Message(msg) => {
+                                    peer.handler.handle(peer.clone(), client.clone(), msg).await;
+                                }
+                                _ => {}
                             }
                         }
+                        Err(e) => {
+                            use tokio::io::ErrorKind;
+                            if let Some(e) = e.downcast_ref::<tokio::io::Error>() {
+                                match e.kind() {
+                                    ErrorKind::UnexpectedEof | ErrorKind::BrokenPipe => {}
+                                    _ => {
+                                        log::error!("{}", e);
+                                    }
+                                }
+                            }
+                            else {
+                                log::error!("{}", e);
+                            }
+                            break
+                        }
                     }
-
-                    peer.disconnected(&client).await;
                 }
+
+                peer.disconnected(&client).await;
             }
         });
     }
@@ -214,11 +198,11 @@ where
         }
     }
     
-    pub async fn send(&self, client: ClientPtr, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
+    pub async fn send(&self, client: ClientPtr, msg: Envelope<T::Msg>) -> Result<(), anyhow::Error> {
         let data = bincode::serialize(&msg)?;
-        let cipher = symm::Cipher::aes_256_cbc();
+        let cipher = symm::Cipher::aes_256_ctr();
 
-        let encrypted = symm::encrypt(cipher, &client.enc_aes_key, Some(&client.enc_iv), &data)?;
+        let encrypted = symm::encrypt(cipher, &client.shared, None, &data)?;
 
         let size = (encrypted.len() as u32).to_be_bytes();
 
@@ -231,12 +215,12 @@ where
 
     pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
         let data = bincode::serialize(&msg)?;
-        let cipher = symm::Cipher::aes_256_cbc();
+        let cipher = symm::Cipher::aes_256_ctr();
 
         let clients = self.clients.lock().await;
 
         for cl in clients.values() {
-            let encrypted = symm::encrypt(cipher, &cl.enc_aes_key, Some(&cl.enc_iv), &data)?;
+            let encrypted = symm::encrypt(cipher, &cl.shared, None, &data)?;
 
             let size = (encrypted.len() as u32).to_be_bytes();
 
@@ -250,13 +234,13 @@ where
 
     pub async fn broadcast_except(&self, msg: Envelope<T::Msg>, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
         let data = bincode::serialize(&msg)?;
-        let cipher = symm::Cipher::aes_256_cbc();
+        let cipher = symm::Cipher::aes_256_ctr();
 
         let clients = self.clients.lock().await;
 
         for cl in clients.values() {
             if cl.addr != ex.addr {
-                let encrypted = symm::encrypt(cipher, &cl.enc_aes_key, Some(&cl.enc_iv), &data)?;
+                let encrypted = symm::encrypt(cipher, &cl.shared, None, &data)?;
                 let size = (encrypted.len() as u32).to_be_bytes();
 
                 let mut stream = cl.writer.lock().await;

@@ -1,13 +1,13 @@
 use std::error::Error;
 
 use openssl::{
-    // ec::{EcKey, EcGroup},
+    ec::{EcKey, EcGroup},
     pkey::{Private, PKey},
-    // nid::Nid,
-    // ecdsa::EcdsaSig,
-    rsa::Rsa,
+    nid::Nid,
+    ecdsa::EcdsaSig,
+    // rsa::{Rsa, Padding},
     sign::{Signer, Verifier},
-    hash::MessageDigest
+    hash::MessageDigest, encrypt::{Encrypter, Decrypter}, derive::Deriver
 };
 
 pub type PubKey = Vec<u8>;
@@ -21,11 +21,12 @@ pub struct Key {
 impl Key {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         // let group = EcGroup::from_curve_name(Nid::SECP521R1)?;
-        // let group = EcGroup::from_curve_name(Nid::SECP128R2)?;
-        // let key = EcKey::generate(&group)?;
+        let group = EcGroup::from_curve_name(Nid::SECP256K1)?;
+        let key = EcKey::generate(&group)?;
+        let key = PKey::from_ec_key(key)?;
         // let key = Rsa::generate(4096)?;
-        let key = Rsa::generate(1024)?;
-        let key = PKey::from_rsa(key)?;
+        // let key = Rsa::generate(1024)?;
+        // let key = PKey::from_rsa(key)?;
         let pkey = key.public_key_to_der()?;
 
         Ok(Self {
@@ -64,13 +65,22 @@ impl Key {
         Ok(sign)
     }
 
-    pub fn validate(data: &[u8], pkey: &[u8], sign: &[u8]) -> Result<bool, Box<dyn Error>> {
+    pub fn validate(data: &[u8], pkey: &[u8], sign: &[u8]) -> Result<bool, anyhow::Error> {
         let key = PKey::public_key_from_der(pkey)?;
         let mut verifier = Verifier::new(MessageDigest::sha3_512(), &key)?;
         verifier.update(data)?;
-        // let key = EcKey::public_key_from_der(&pkey)?;
-        // let verifier = EcdsaSig::from_der(&sign)?;
 
         Ok(verifier.verify(sign)?)
+    }
+
+    pub fn shared_secret(&self, pubkey: &PubKey) -> Result<Vec<u8>, anyhow::Error> {
+        let pkey = PKey::public_key_from_der(pubkey)?;
+        let mut deriver = Deriver::new(&self.private_key)?;
+        deriver.set_peer(&pkey);
+
+        let buffer = deriver.derive_to_vec()?;
+        log::debug!("shared key {}", buffer.len());
+
+        Ok(buffer)
     }
 }
