@@ -12,7 +12,7 @@ fn main() {
     let args = Args::parse();
 
     let data = std::fs::read(args.file).unwrap();
-    let index: HashMap<Vec<u8>, (u64, u64)> = bincode::deserialize(&data).unwrap();
+    let index: HashMap<Vec<u8>, (u64, u64)> = rmp_serde::from_slice(&data).unwrap();
     let mut sorted = Vec::new();
 
     for (k, v) in index.iter() {

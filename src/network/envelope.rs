@@ -8,11 +8,28 @@ use crate::key::PubKey;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Envelope<T> {
-    Greeting {id: PubKey, thin: bool },
-    AesKey {aes: Vec<u8>, iv: Vec<u8>, sign: Vec<u8>},
+    Greeting {
+        #[serde(with="serde_bytes")]
+        id: PubKey,
+        thin: bool
+    },
+    AesKey {
+        #[serde(with="serde_bytes")]
+        aes: Vec<u8>, 
+        #[serde(with="serde_bytes")]
+        iv: Vec<u8>,
+        #[serde(with="serde_bytes")]
+        sign: Vec<u8>
+    },
     AllKnown { all_known: Vec<PubKey>},
-    Announce {id: PubKey},
-    Remove {id: PubKey},
+    Announce {
+        #[serde(with="serde_bytes")]
+        id: PubKey
+    },
+    Remove {
+        #[serde(with="serde_bytes")]
+        id: PubKey
+    },
     Message(T),
 }
 
@@ -21,7 +38,7 @@ where
     M: Serialize + DeserializeOwned
 {
     pub async fn write_aes<T: AsyncWriteExt + Unpin>(&self, writer: &mut T, aes: &[u8]) -> Result<(), Box<dyn Error>> {
-        let data = bincode::serialize(&self)?;
+        let data = rmp_serde::to_vec_named(&self)?;
         let cipher = symm::Cipher::aes_256_ctr();
         let encrypted = symm::encrypt(cipher, aes, None, &data)?;
 
@@ -34,7 +51,7 @@ where
     }
 
     pub async fn write<T: AsyncWriteExt + Unpin>(&self, writer: &mut T) -> Result<(), anyhow::Error> {
-        let data = bincode::serialize(&self)?;
+        let data = rmp_serde::to_vec_named(&self)?;
         let size = (data.len() as u32).to_be_bytes();
 
         writer.write(&size).await?;
@@ -54,7 +71,7 @@ where
         let cipher = symm::Cipher::aes_256_ctr();
         let data = symm::decrypt(cipher, aes, None, &buffer)?;
 
-        Ok(bincode::deserialize(&data)?)
+        Ok(rmp_serde::from_slice(&data)?)
     }
 
     pub async fn read<T: AsyncReadExt + Unpin>(reader: &mut T) -> Result<Self, Box<dyn Error>> {
@@ -64,7 +81,7 @@ where
         let mut buffer = vec![0u8; size];
         reader.read_exact(&mut buffer).await?;
 
-        Ok(bincode::deserialize(&buffer)?)
+        Ok(rmp_serde::from_slice(&buffer)?)
     }
 }
 

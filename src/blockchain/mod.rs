@@ -37,7 +37,7 @@ impl Blockchain {
 
         let index: HashMap<Vec<u8>, (u64, u64)> = if idxname.exists() {
             let file = File::open(idxname).unwrap();
-            bincode::deserialize_from(file).unwrap()
+            rmp_serde::from_read(file).unwrap()
         }
         else {
             HashMap::new()
@@ -110,7 +110,7 @@ impl Blockchain {
             .append(true)
             .open(filename).unwrap();
         let pos = file.seek(std::io::SeekFrom::End(0)).unwrap();       
-        let data = bincode::serialize(&block).unwrap();
+        let data = rmp_serde::to_vec_named(&block).unwrap();
         let end = data.len() as u64;
         file.write_all(&data).unwrap();
 
@@ -119,7 +119,8 @@ impl Blockchain {
 
     pub fn save_index(&self) {
         let filename = self.folder.join("bc.idx");
-        let file = File::create(filename).unwrap();
-        bincode::serialize_into(file, &self.index).unwrap();
+        let mut file = File::create(filename).unwrap();
+        let data = rmp_serde::to_vec_named(&self.index).unwrap();
+        file.write_all(&data).unwrap();
     }
 }

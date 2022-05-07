@@ -8,12 +8,13 @@ edition = "2021"
 [dependencies]
 # openssl = {version = "*", features = ["vendored"]}
 anyhow = "*"
-bincode = "*"
 clap = {version = "*", features = ["derive"]}
 env_logger = "*"
 hex = "*"
 log = "*"
 openssl = {version = "*"}
+rmp-serde = "*"
 serde = {version = "*", features = ["derive"]}
+serde_bytes = "*"
 toml = "*"
 tokio = {version = "*", features = ["full"]}

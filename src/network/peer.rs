@@ -199,7 +199,7 @@ where
     }
     
     pub async fn send(&self, client: ClientPtr, msg: Envelope<T::Msg>) -> Result<(), anyhow::Error> {
-        let data = bincode::serialize(&msg)?;
+        let data = rmp_serde::to_vec_named(&msg)?;
         let cipher = symm::Cipher::aes_256_ctr();
 
         let encrypted = symm::encrypt(cipher, &client.shared, None, &data)?;
@@ -214,7 +214,7 @@ where
     }
 
     pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
-        let data = bincode::serialize(&msg)?;
+        let data = rmp_serde::to_vec_named(&msg)?;
         let cipher = symm::Cipher::aes_256_ctr();
 
         let clients = self.clients.lock().await;
@@ -233,7 +233,7 @@ where
     }
 
     pub async fn broadcast_except(&self, msg: Envelope<T::Msg>, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
-        let data = bincode::serialize(&msg)?;
+        let data = rmp_serde::to_vec_named(&msg)?;
         let cipher = symm::Cipher::aes_256_ctr();
 
         let clients = self.clients.lock().await;
