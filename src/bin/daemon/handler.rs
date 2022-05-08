@@ -97,7 +97,7 @@ impl DaemonHandler {
 }
 
 impl Handler for DaemonHandler {
-    type Msg = Messages;
+    type Msg = Messages<u8>;
 
     fn new(config: &Config) -> Self {
         Self {
@@ -130,7 +130,7 @@ impl Handler for DaemonHandler {
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &DaemonHandler, peer: Peer<DaemonHandler>, client: ClientPtr, msg: Messages) {
+        async fn run(_self: &DaemonHandler, peer: Peer<DaemonHandler>, client: ClientPtr, msg: Messages<u8>) {
             
             match msg {
                 Messages::Play { game } => {
@@ -142,6 +142,7 @@ impl Handler for DaemonHandler {
                 Messages::ShareBlock { block } => {
                     _self.on_new_block(peer, client, block).await;
                 }
+                Messages::UserData(_) => {}
             }
         }
 

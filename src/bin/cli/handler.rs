@@ -28,7 +28,7 @@ impl CliHandler {
 }
 
 impl Handler for CliHandler {
-    type Msg = Messages;
+    type Msg = Messages<u8>;
 
     fn new(_config: &Config) -> Self {
         Self { }
@@ -61,7 +61,7 @@ impl Handler for CliHandler {
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Messages) {
+        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Messages<u8>) {
             match msg {
                 _ => {}
                 // Messages::Play { game } => {
