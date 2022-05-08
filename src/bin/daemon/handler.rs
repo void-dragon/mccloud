@@ -3,7 +3,7 @@ use std::{sync::Arc, pin::Pin, future::Future};
 
 use tokio::sync::Mutex;
 
-use cluster_rs::{
+use mccloud::{
     highlander::{Highlander, Game},
     blockchain::{Blockchain, Data, Block},
     network::{

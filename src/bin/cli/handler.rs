@@ -1,7 +1,7 @@
 
 use std::{pin::Pin, future::Future};
 
-use cluster_rs::{
+use mccloud::{
     network::{
         peer::{ClientPtr, Peer},
         handler::Handler,

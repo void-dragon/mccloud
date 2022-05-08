@@ -1,6 +1,6 @@
 
 use clap::Parser;
-use cluster_rs::{
+use mccloud::{
     key::Key,
     network::peer::Peer,
     config::{Config, ClientConfig}

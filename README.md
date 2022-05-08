@@ -1,5 +1,5 @@
 
-cluster is a decentrelized data server wich uses the highlander algorithm instead of Proof of Work.
+mccloud is a decentrelized data server wich uses the highlander algorithm instead of Proof of Work.
 
 # Highlander Algorithm
 

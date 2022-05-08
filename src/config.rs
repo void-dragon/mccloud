@@ -10,7 +10,7 @@ pub struct ClientConfig {
 }
 
 ///
-/// The configuration of a single [Peer].
+/// The configuration of a single [Peer](`crate::network::peer::Peer`).
 /// 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
