@@ -7,7 +7,8 @@ use crate::{
     highlander::{Highlander, Game},
     blockchain::{Blockchain, Data, Block},
     network::{
-        peer::{ClientPtr, Peer},
+        client::ClientPtr,
+        peer::Peer,
         handler::Handler,
     },
     messages::Messages, config::Config

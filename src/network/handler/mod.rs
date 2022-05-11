@@ -1,9 +1,11 @@
 use std::{pin::Pin, future::Future};
 
 use crate::{
-    network::peer::{Peer, ClientPtr},
+    network::peer::Peer,
     config::Config
 };
+
+use super::client::ClientPtr;
 
 pub mod daemon;
 

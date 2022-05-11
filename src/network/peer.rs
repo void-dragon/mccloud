@@ -11,9 +11,8 @@ use tokio::{
     net::{
         TcpListener,
         TcpStream,
-        tcp::{OwnedWriteHalf, OwnedReadHalf}
     },
-    io::{self, AsyncWriteExt, AsyncReadExt},
+    io::{self, AsyncWriteExt},
     sync::Mutex, select,
 };
 
@@ -26,68 +25,8 @@ use crate::{
     },
 };
 
-pub struct Client {
-    pubkey: PubKey,
-    thin: bool,
-    addr: SocketAddr,
-    writer: Mutex<OwnedWriteHalf>,
-    reader: Mutex<OwnedReadHalf>,
-    shared: Vec<u8>,
-}
+use super::client::{ClientPtr, Client};
 
-impl Client {
-    pub async fn write_aes<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let cipher = symm::Cipher::aes_256_ctr();
-        let encrypted = symm::encrypt(cipher, &self.shared, None, &data)?;
-
-        let size = (encrypted.len() as u32).to_be_bytes();
-
-        let mut writer = self.writer.lock().await;
-        writer.write(&size).await?;
-        writer.write_all(&encrypted).await?;
-
-        Ok(())
-    }
-
-    pub async fn write<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let size = (data.len() as u32).to_be_bytes();
-
-        let mut writer = self.writer.lock().await;
-        writer.write(&size).await?;
-        writer.write_all(&data).await?;
-
-        Ok(())
-    }
-
-    pub async fn read_aes<T: DeserializeOwned>(&self) -> Result<Envelope<T>, anyhow::Error> {
-        let mut reader = self.reader.lock().await;
-        let mut size_bytes = [0; 4];
-        reader.read_exact(&mut size_bytes).await?;
-        let size = u32::from_be_bytes(size_bytes) as usize;
-        let mut buffer = vec![0u8; size];
-        reader.read_exact(&mut buffer).await?;
-
-        let cipher = symm::Cipher::aes_256_ctr();
-        let data = symm::decrypt(cipher, &self.shared, None, &buffer)?;
-
-        Ok(rmp_serde::from_slice(&data)?)
-    }
-
-    pub async fn read<T: DeserializeOwned>(&self) -> Result<Envelope<T>, Box<dyn Error>> {
-        let mut reader = self.reader.lock().await;
-        let mut size_bytes = [0; 4];
-        reader.read_exact(&mut size_bytes).await?;
-        let size = u32::from_be_bytes(size_bytes) as usize;
-        let mut buffer = vec![0u8; size];
-        reader.read_exact(&mut buffer).await?;
-
-        Ok(rmp_serde::from_slice(&buffer)?)
-    }
-}
-
-pub type ClientPtr = Arc<Client>;
 
 macro_rules! check {
     ($ex:expr) => {
@@ -152,8 +91,7 @@ where
 
         let clients = self.clients.lock().await;
         for cl in clients.values() {
-            let mut w = cl.writer.lock().await;
-            w.shutdown().await.unwrap();
+            cl.shutdown().await;
         }
 
         Ok(())
@@ -196,15 +134,16 @@ where
 
                 if !client.thin {
                     let all_known = peer.all_known.lock().await.iter().cloned().collect();
-                    let msg = Envelope::AllKnown { all_known };
-                    let res = peer.send(client.clone(), msg).await;
+                    let msg = Envelope::<T::Msg>::AllKnown { all_known };
+                    let res = client.write_aes(msg).await;
                     if let Err(e) = res {
                         println!("{}", e);
                     }
                 }
 
                 if !peer.config.thin {
-                    let res = peer.send(client.clone(), Envelope::Announce { id: peer.key.public_key.clone() }).await;
+                    let msg = Envelope::<T::Msg>::Announce { id: peer.key.public_key.clone() };
+                    let res = client.write_aes(msg).await;
                     if let Err(e) = res {
                         println!("{}", e);
                     }
@@ -265,21 +204,6 @@ where
         }
     }
     
-    pub async fn send(&self, client: ClientPtr, msg: Envelope<T::Msg>) -> Result<(), anyhow::Error> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let cipher = symm::Cipher::aes_256_ctr();
-
-        let encrypted = symm::encrypt(cipher, &client.shared, None, &data)?;
-
-        let size = (encrypted.len() as u32).to_be_bytes();
-
-        let mut writer = client.writer.lock().await;
-        writer.write(&size).await?;
-        writer.write_all(&encrypted).await?;
-
-        Ok(())
-    }
-
     pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
         let data = rmp_serde::to_vec_named(&msg)?;
         let cipher = symm::Cipher::aes_256_ctr();

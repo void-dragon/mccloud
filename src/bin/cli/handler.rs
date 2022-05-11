@@ -3,7 +3,8 @@ use std::{pin::Pin, future::Future};
 
 use mccloud::{
     network::{
-        peer::{ClientPtr, Peer},
+        client::ClientPtr,
+        peer::Peer,
         handler::Handler,
     },
     messages::Messages,
@@ -41,9 +42,9 @@ impl Handler for CliHandler {
             log::debug!("init");
             let data = b"shrouble".to_vec();
             let data = Data::build(&peer.key, data);
-            let msg = Messages::Share { data };
+            let msg = Messages::<u8>::Share { data };
             log::debug!("send data share");
-            peer.send(client, msg.into()).await.unwrap();
+            client.write_aes(msg.into()).await.unwrap();
         }
 
         Box::pin(run(self, peer, client)) 
