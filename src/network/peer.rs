@@ -11,9 +11,9 @@ use tokio::{
     net::{
         TcpListener,
         TcpStream,
-        tcp::OwnedWriteHalf
+        tcp::{OwnedWriteHalf, OwnedReadHalf}
     },
-    io::{self, AsyncWriteExt},
+    io::{self, AsyncWriteExt, AsyncReadExt},
     sync::Mutex, select,
 };
 
@@ -31,7 +31,60 @@ pub struct Client {
     thin: bool,
     addr: SocketAddr,
     writer: Mutex<OwnedWriteHalf>,
+    reader: Mutex<OwnedReadHalf>,
     shared: Vec<u8>,
+}
+
+impl Client {
+    pub async fn write_aes<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
+        let data = rmp_serde::to_vec_named(&msg)?;
+        let cipher = symm::Cipher::aes_256_ctr();
+        let encrypted = symm::encrypt(cipher, &self.shared, None, &data)?;
+
+        let size = (encrypted.len() as u32).to_be_bytes();
+
+        let mut writer = self.writer.lock().await;
+        writer.write(&size).await?;
+        writer.write_all(&encrypted).await?;
+
+        Ok(())
+    }
+
+    pub async fn write<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
+        let data = rmp_serde::to_vec_named(&msg)?;
+        let size = (data.len() as u32).to_be_bytes();
+
+        let mut writer = self.writer.lock().await;
+        writer.write(&size).await?;
+        writer.write_all(&data).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_aes<T: DeserializeOwned>(&self) -> Result<Envelope<T>, anyhow::Error> {
+        let mut reader = self.reader.lock().await;
+        let mut size_bytes = [0; 4];
+        reader.read_exact(&mut size_bytes).await?;
+        let size = u32::from_be_bytes(size_bytes) as usize;
+        let mut buffer = vec![0u8; size];
+        reader.read_exact(&mut buffer).await?;
+
+        let cipher = symm::Cipher::aes_256_ctr();
+        let data = symm::decrypt(cipher, &self.shared, None, &buffer)?;
+
+        Ok(rmp_serde::from_slice(&data)?)
+    }
+
+    pub async fn read<T: DeserializeOwned>(&self) -> Result<Envelope<T>, Box<dyn Error>> {
+        let mut reader = self.reader.lock().await;
+        let mut size_bytes = [0; 4];
+        reader.read_exact(&mut size_bytes).await?;
+        let size = u32::from_be_bytes(size_bytes) as usize;
+        let mut buffer = vec![0u8; size];
+        reader.read_exact(&mut buffer).await?;
+
+        Ok(rmp_serde::from_slice(&buffer)?)
+    }
 }
 
 pub type ClientPtr = Arc<Client>;
@@ -106,28 +159,36 @@ where
         Ok(())
     }
 
-    fn accept(&self, mut stream: TcpStream, addr: SocketAddr) {
+    fn accept(&self, stream: TcpStream, addr: SocketAddr) {
         let peer = (*self).clone();
 
         tokio::spawn(async move {
+            let (reader, writer) = stream.into_split();
+            let mut client = Arc::new(Client {
+                pubkey: Vec::new(),
+                addr,
+                thin: false,
+                writer: Mutex::new(writer),
+                reader: Mutex::new(reader),
+                shared: Vec::new(),
+            });
+
             let greet = Envelope::<T::Msg>::Greeting { 
                 id: peer.key.public_key.clone(),
                 thin: peer.config.thin,
             };
-            greet.write(&mut stream).await.unwrap();
+            client.write(greet).await.unwrap();
 
-            let res = Envelope::<T::Msg>::read(&mut stream).await.unwrap();
+            let res: Envelope<T::Msg> = client.read().await.unwrap();
             if let Envelope::Greeting { id, thin } = res {
                 log::info!("id {}", hex::encode(&id));
-                let (mut reader, writer) = stream.into_split();
+
                 let shared = peer.key.shared_secret(&id).unwrap();
-                let client = Arc::new(Client {
-                    pubkey: id,
-                    addr,
-                    thin,
-                    writer: Mutex::new(writer),
-                    shared,
-                });
+                if let Some(cl) = Arc::get_mut(&mut client) {
+                    cl.pubkey = id;
+                    cl.shared = shared;
+                    cl.thin = thin;
+                }
 
                 peer.clients.lock().await.insert(client.addr.clone(), client.clone());
 
@@ -150,10 +211,7 @@ where
                 }
 
                 loop {
-                    let env = Envelope::read_aes(
-                        &mut reader, 
-                        &client.shared
-                    ).await;
+                    let env = client.read_aes().await;
 
                     match env {
                         Ok(env) => {

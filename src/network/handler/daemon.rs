@@ -172,7 +172,9 @@ where
                 Messages::ShareBlock { block } => {
                     _self.on_new_block(peer, client, block).await;
                 }
-                Messages::UserData(_) => {}
+                Messages::UserData(data) => {
+                    _self.user_data_handler.handle(data).await;
+                }
             }
         }
 

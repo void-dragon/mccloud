@@ -23,7 +23,6 @@ pub struct Key {
 
 impl Key {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        // let group = EcGroup::from_curve_name(Nid::SECP521R1)?;
         let group = EcGroup::from_curve_name(Nid::SECP256K1)?;
         let key = EcKey::generate(&group)?;
         let key = PKey::from_ec_key(key)?;
