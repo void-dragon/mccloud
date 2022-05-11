@@ -1,9 +1,9 @@
-
 use std::{sync::Arc, pin::Pin, future::Future};
 
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::Mutex;
 
-use mccloud::{
+use crate::{
     highlander::{Highlander, Game},
     blockchain::{Blockchain, Data, Block},
     network::{
@@ -28,17 +28,32 @@ macro_rules! check {
     };
 }
 
+pub trait UserDataHandler: Send + Sync + Clone {
+    type UserData;
+
+    fn new() -> Self;
+
+    fn handle<'a>(&'a self, data: Self::UserData) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    where
+        Self: Sync + 'a;
+}
+
 ///
 /// [Handler] is handling the incoming messages.
 /// 
 #[derive(Clone)]
-pub struct DaemonHandler {
+pub struct DaemonHandler<T> {
     state: Arc<Mutex<State>>,
     highlander: Arc<Mutex<Highlander>>,
     blockchain: Arc<Mutex<Blockchain>>,
+    user_data_handler: Arc<T>,
 }
 
-impl DaemonHandler {
+impl<T> DaemonHandler<T>
+where 
+    T: UserDataHandler + 'static,
+    T::UserData: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
+{
     async fn on_share(&self, peer: Peer<Self>, client: ClientPtr, data: Data) {
         self.blockchain.lock().await.add_to_cache(data.clone());
 
@@ -96,21 +111,29 @@ impl DaemonHandler {
     }
 }
 
-impl Handler for DaemonHandler {
-    type Msg = Messages<u8>;
+impl<T> Handler for DaemonHandler<T>
+where
+    T: UserDataHandler + 'static,
+    T::UserData: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
+{
+    type Msg = Messages<T::UserData>;
 
     fn new(config: &Config) -> Self {
         Self {
             state: Arc::new(Mutex::new(State::Idle)),
             highlander: Arc::new(Mutex::new(Highlander::new())),
             blockchain: Arc::new(Mutex::new(Blockchain::new(&config.folder))),
+            user_data_handler: Arc::new(T::new()),
         }
     }
     
     fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &DaemonHandler, _peer: Peer<DaemonHandler>, _client: ClientPtr) {
+        async fn run<T>(_self: &DaemonHandler<T>, _peer: Peer<DaemonHandler<T>>, _client: ClientPtr) where
+            T: UserDataHandler + 'static,
+            T::UserData: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
+        {
             
         }
 
@@ -120,7 +143,10 @@ impl Handler for DaemonHandler {
     fn shutdown<'a>(&'a self, peer: Peer<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &DaemonHandler, _peer: Peer<DaemonHandler>) {
+        async fn run<T: UserDataHandler>(_self: &DaemonHandler<T>, _peer: Peer<DaemonHandler<T>>) where
+            T: UserDataHandler + 'static,
+            T::UserData: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
+        {
             _self.blockchain.lock().await.save_index();            
         }
 
@@ -130,7 +156,11 @@ impl Handler for DaemonHandler {
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &DaemonHandler, peer: Peer<DaemonHandler>, client: ClientPtr, msg: Messages<u8>) {
+        async fn run<T: UserDataHandler>(_self: &DaemonHandler<T>, peer: Peer<DaemonHandler<T>>, client: ClientPtr, msg: Messages<T::UserData>) 
+        where
+            T: UserDataHandler + 'static,
+            T::UserData: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
+        {
             
             match msg {
                 Messages::Play { game } => {

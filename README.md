@@ -41,3 +41,7 @@ the fake data block.
 #### A user spawns over 51% new fake nodes
 This would produce vastly inconcistent game matches. If the game which is included in the new block does not
 match up the game plan create on the local node, the block is resisted.
+
+#### Delayed Game
+The node waits until all other nodes in his game path have send there choices,
+to calculate the perfect choices to win.

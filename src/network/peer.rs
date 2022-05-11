@@ -55,7 +55,7 @@ pub struct Peer<T> where T: Handler + ?Sized {
 
 impl<T> Peer<T> 
 where 
-    T: Handler + Clone + 'static,
+    T: Handler + 'static,
     T::Msg: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
 {
     pub fn new(config: Config) -> Self {
@@ -88,7 +88,7 @@ where
             select! {
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("begin shutdown");
-                    self.handler.shutdown(self.clone()).await;
+                    self.handler.shutdown((*self).clone()).await;
                     break
                 }
                 Ok((socket, addr)) = lst.accept() => {
@@ -132,6 +132,15 @@ where
                 peer.clients.lock().await.insert(client.addr.clone(), client.clone());
 
                 peer.handler.init(peer.clone(), client.clone()).await;
+
+                if !client.thin {
+                    let all_known = peer.all_known.lock().await.iter().cloned().collect();
+                    let msg = Envelope::AllKnown { all_known };
+                    let res = peer.send(client.clone(), msg).await;
+                    if let Err(e) = res {
+                        println!("{}", e);
+                    }
+                }
 
                 if !peer.config.thin {
                     let res = peer.send(client.clone(), Envelope::Announce { id: peer.key.public_key.clone() }).await;

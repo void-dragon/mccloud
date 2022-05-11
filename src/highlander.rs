@@ -157,12 +157,16 @@ impl Highlander {
                 true
             }
             else {
-                log::error!("game author is not part of the game");
+                log::error!("game author is not part of the game\nauthor: {}", hex::encode(game.author));
                 false
             }
         }
         else {
-            log::error!("round length for game does not match");
+            log::error!(
+                "round length do not match:\nexpected: {}\ngame: {}\nauthor: {}",
+                count, game.rounds.len(),
+                hex::encode(game.author)
+            );
             false
         }
     }

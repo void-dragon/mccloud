@@ -88,7 +88,7 @@ impl Blockchain {
             }
             else {
                 log::error!(
-                    "new block has not current highest block as parent:\n node:{}\nparent:{}\nhighest:{}",
+                    "new block has not current highest block as parent:\nnode:    {}\nparent:  {}\nhighest: {}",
                     hex::encode(&block.hash),
                     hex::encode(&block.parent),
                     hex::encode(&self.highest_hash)

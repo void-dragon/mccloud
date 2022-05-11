@@ -5,8 +5,9 @@ use crate::{
     config::Config
 };
 
+pub mod daemon;
 
-pub trait Handler: Send + Sync {
+pub trait Handler: Send + Sync + Clone {
     type Msg;
 
     fn new(config: &Config) -> Self;
