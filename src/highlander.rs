@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use openssl::{rand::rand_bytes, sha::Sha512};
+use rand::{rngs::OsRng, RngCore};
 use serde::{Serialize, Deserialize};
+use sha2::{Digest, Sha256};
 
 use crate::key::{Key, PubKey};
 
@@ -78,8 +79,8 @@ pub struct GameResult {
     pub sign: Vec<u8>,
 }
 
-fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>>, winner: &PubKey) -> [u8; 64] {
-    let mut sha = Sha512::new();
+fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>>, winner: &PubKey) -> Vec<u8> {
+    let mut sha = Sha256::new();
 
     for id in tree {
         if let Some(ref id) = id {
@@ -94,7 +95,7 @@ fn game_result_hash(tree: &Vec<Option<PubKey>>, roster: &HashMap<PubKey, Vec<u8>
 
     sha.update(winner);
 
-    sha.finish()
+    sha.finalize().to_vec()
 }
 
 impl GameResult {
@@ -177,7 +178,7 @@ impl Highlander {
         let count = (count as f64).log2() as usize;
         let mut buf = vec![0u8; count];
 
-        rand_bytes(&mut buf).unwrap();
+        OsRng.fill_bytes(&mut buf);
 
         for i in 0..count {
             buf[i] %= 3;

@@ -5,7 +5,7 @@ use mccloud::{
     network::{
         client::ClientPtr,
         peer::Peer,
-        handler::Handler,
+        handler::Handler, envelope::Envelope,
     },
     messages::Messages,
     blockchain::Data,
@@ -43,8 +43,10 @@ impl Handler for CliHandler {
             let data = b"shrouble".to_vec();
             let data = Data::build(&peer.key, data);
             let msg = Messages::<u8>::Share { data };
+            let env: Envelope<Messages<u8>> = msg.into();
+            let data = env.to_bytes().unwrap();
             log::debug!("send data share");
-            client.write_aes(msg.into()).await.unwrap();
+            client.write_aes(&data).await.unwrap();
         }
 
         Box::pin(run(self, peer, client)) 

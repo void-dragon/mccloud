@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 use crate::key::PubKey;
 
@@ -8,6 +8,8 @@ pub enum Envelope<T> {
     Greeting {
         #[serde(with="serde_bytes")]
         id: PubKey,
+        #[serde(with="serde_bytes")]
+        shared: PubKey,
         thin: bool
     },
     AllKnown { all_known: Vec<PubKey>},
@@ -20,6 +22,17 @@ pub enum Envelope<T> {
         id: PubKey
     },
     Message(T),
+}
+
+impl<T> Envelope<T> 
+  where T: Serialize + DeserializeOwned {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        rmp_serde::to_vec_named(self)
+    }
+
+    pub fn from_bytes(v: &Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(v)
+    }
 }
 
 impl<M> From<M> for Envelope<M> {

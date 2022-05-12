@@ -1,7 +1,8 @@
 use std::{sync::Arc, net::SocketAddr};
 
-use openssl::symm;
-use serde::{Serialize, de::DeserializeOwned};
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use rand::{rngs::OsRng, RngCore};
+use serde::de::DeserializeOwned;
 use tokio::{
     net::{
         tcp::{OwnedWriteHalf, OwnedReadHalf}
@@ -14,9 +15,12 @@ use crate::key::PubKey;
 
 use super::envelope::Envelope;
 
+pub type AesCbcEnc = cbc::Encryptor<aes::Aes256>;
+pub type AesCbcDec = cbc::Decryptor<aes::Aes256>;
 
 pub struct Client {
     pub pubkey: PubKey,
+    pub ephemeral: k256::ecdh::EphemeralSecret,
     pub thin: bool,
     pub addr: SocketAddr,
     pub writer: Mutex<OwnedWriteHalf>,
@@ -25,22 +29,23 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn write_aes<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let cipher = symm::Cipher::aes_256_ctr();
-        let encrypted = symm::encrypt(cipher, &self.shared, None, &data)?;
+    pub async fn write_aes(&self, data: &Vec<u8>) -> Result<(), anyhow::Error> {
+        let mut iv = [0u8; 16];
+        OsRng.fill_bytes(&mut iv);
+        let enc = AesCbcEnc::new_from_slices(&self.shared, &iv).unwrap();
+        let encrypted = enc.encrypt_padded_vec_mut::<Pkcs7>(&data);
 
         let size = (encrypted.len() as u32).to_be_bytes();
 
         let mut writer = self.writer.lock().await;
         writer.write(&size).await?;
+        writer.write(&iv).await?;
         writer.write_all(&encrypted).await?;
 
         Ok(())
     }
 
-    pub async fn write<T: Serialize>(&self, msg: Envelope<T>) -> Result<(), anyhow::Error> {
-        let data = rmp_serde::to_vec_named(&msg)?;
+    pub async fn write(&self, data: &Vec<u8>) -> Result<(), anyhow::Error> {
         let size = (data.len() as u32).to_be_bytes();
 
         let mut writer = self.writer.lock().await;
@@ -55,11 +60,13 @@ impl Client {
         let mut size_bytes = [0; 4];
         reader.read_exact(&mut size_bytes).await?;
         let size = u32::from_be_bytes(size_bytes) as usize;
+        let mut iv = [0u8; 16];
+        reader.read_exact(&mut iv).await?;
         let mut buffer = vec![0u8; size];
         reader.read_exact(&mut buffer).await?;
 
-        let cipher = symm::Cipher::aes_256_ctr();
-        let data = symm::decrypt(cipher, &self.shared, None, &buffer)?;
+        let dec = AesCbcDec::new_from_slices(&self.shared, &iv).unwrap();
+        let data: Vec<u8> = dec.decrypt_padded_vec_mut::<Pkcs7>(&buffer).unwrap();
 
         Ok(rmp_serde::from_slice(&data)?)
     }

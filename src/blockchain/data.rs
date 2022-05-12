@@ -23,7 +23,7 @@ impl Data {
 
     pub fn validate(&self) -> bool {
         match Key::validate(&self.data, &self.author, &self.sign) {
-            Ok(valid) => valid,
+            Ok(_) => true,
             Err(e) => {
                 log::error!("unvalid data chunk: {}", e);
                 false

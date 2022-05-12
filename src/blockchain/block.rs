@@ -1,5 +1,5 @@
-use openssl::sha::Sha512;
 use serde::{Serialize, Deserialize};
+use sha2::{Digest, Sha256};
 
 use crate::{highlander::GameResult, key::{PubKey, Key}};
 
@@ -19,8 +19,8 @@ pub struct Block {
     pub sign: Vec<u8>,
 }
 
-pub fn block_hash(parent: &Vec<u8>, author: &Vec<u8>, data: &Vec<Data>, game: &GameResult) -> [u8; 64] {
-    let mut sha = Sha512::new();
+pub fn block_hash(parent: &Vec<u8>, author: &Vec<u8>, data: &Vec<Data>, game: &GameResult) -> Vec<u8> {
+    let mut sha = Sha256::new();
 
     for d in data {
         sha.update(&d.data);
@@ -48,7 +48,7 @@ pub fn block_hash(parent: &Vec<u8>, author: &Vec<u8>, data: &Vec<Data>, game: &G
     sha.update(parent);
     sha.update(author);
 
-    sha.finish()
+    sha.finalize().to_vec()
 }
 
 impl Block {
@@ -78,7 +78,7 @@ impl Block {
 
         if self.hash == hash {
             match Key::validate(&hash, &self.author, &self.sign) {
-                Ok(valid) => valid,
+                Ok(_) => true,
                 Err(e) => {
                     log::error!("unvalid block: {}", e);
                     false

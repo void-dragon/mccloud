@@ -5,14 +5,14 @@ use std::{
     error::Error,
 };
 
-use openssl::symm;
+use rand::rngs::OsRng;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     net::{
         TcpListener,
         TcpStream,
     },
-    io::{self, AsyncWriteExt},
+    io,
     sync::Mutex, select,
 };
 
@@ -54,7 +54,7 @@ where
         let handler = Arc::new(T::new(&config));
 
         Self {
-            key: Arc::new(Key::new().unwrap()),
+            key: Arc::new(Key::new()),
             config: config,
             clients: Arc::new(Mutex::new(HashMap::new())),
             all_known: Arc::new(Mutex::new(HashSet::new())),
@@ -63,7 +63,7 @@ where
     }
 
     pub async fn listen(&self) -> io::Result<()> {
-        log::info!("me {}", hex::encode(&self.key.public_key));
+        log::info!("me {:?}", hex::encode(&self.key.public_key));
 
         let lst = TcpListener::bind((
             self.config.host.clone(),
@@ -104,6 +104,7 @@ where
             let (reader, writer) = stream.into_split();
             let mut client = Arc::new(Client {
                 pubkey: Vec::new(),
+                ephemeral: k256::ecdh::EphemeralSecret::random(OsRng),
                 addr,
                 thin: false,
                 writer: Mutex::new(writer),
@@ -111,17 +112,22 @@ where
                 shared: Vec::new(),
             });
 
+            let shared = k256::EncodedPoint::from(client.ephemeral.public_key());
+            let shared = shared.as_bytes();
             let greet = Envelope::<T::Msg>::Greeting { 
                 id: peer.key.public_key.clone(),
+                shared: shared.to_vec(),
                 thin: peer.config.thin,
-            };
-            client.write(greet).await.unwrap();
+            }.to_bytes().unwrap();
+            client.write(&greet).await.unwrap();
 
             let res: Envelope<T::Msg> = client.read().await.unwrap();
-            if let Envelope::Greeting { id, thin } = res {
+            if let Envelope::Greeting { id, thin, shared } = res {
                 log::info!("id {}", hex::encode(&id));
 
-                let shared = peer.key.shared_secret(&id).unwrap();
+                let shared = k256::PublicKey::from_sec1_bytes(&shared).unwrap();
+                let shared = client.ephemeral.diffie_hellman(&shared).raw_secret_bytes().to_vec();
+                log::debug!("shared {} {}", shared.len(), hex::encode(&shared));
                 if let Some(cl) = Arc::get_mut(&mut client) {
                     cl.pubkey = id;
                     cl.shared = shared;
@@ -134,19 +140,14 @@ where
 
                 if !client.thin {
                     let all_known = peer.all_known.lock().await.iter().cloned().collect();
-                    let msg = Envelope::<T::Msg>::AllKnown { all_known };
-                    let res = client.write_aes(msg).await;
-                    if let Err(e) = res {
-                        println!("{}", e);
-                    }
+                    let msg = Envelope::<T::Msg>::AllKnown { all_known }.to_bytes().unwrap();
+                    check!(client.write_aes(&msg).await);
                 }
 
                 if !peer.config.thin {
                     let msg = Envelope::<T::Msg>::Announce { id: peer.key.public_key.clone() };
-                    let res = client.write_aes(msg).await;
-                    if let Err(e) = res {
-                        println!("{}", e);
-                    }
+                    let msg = msg.to_bytes().unwrap();
+                    check!(client.write_aes(&msg).await);
                 }
 
                 loop {
@@ -205,38 +206,25 @@ where
     }
     
     pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let cipher = symm::Cipher::aes_256_ctr();
+        let data = msg.to_bytes()?;
 
         let clients = self.clients.lock().await;
 
         for cl in clients.values() {
-            let encrypted = symm::encrypt(cipher, &cl.shared, None, &data)?;
-
-            let size = (encrypted.len() as u32).to_be_bytes();
-
-            let mut writer = cl.writer.lock().await;
-            writer.write(&size).await?;
-            writer.write_all(&encrypted).await?;
+            cl.write_aes(&data).await?;
         }
 
         Ok(())
     }
 
     pub async fn broadcast_except(&self, msg: Envelope<T::Msg>, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
-        let data = rmp_serde::to_vec_named(&msg)?;
-        let cipher = symm::Cipher::aes_256_ctr();
+        let data = msg.to_bytes()?;
 
         let clients = self.clients.lock().await;
 
         for cl in clients.values() {
             if cl.addr != ex.addr {
-                let encrypted = symm::encrypt(cipher, &cl.shared, None, &data)?;
-                let size = (encrypted.len() as u32).to_be_bytes();
-
-                let mut stream = cl.writer.lock().await;
-                stream.write(&size).await?;
-                stream.write_all(&encrypted).await?;
+                cl.write_aes(&data).await?;
             }
         }
 
