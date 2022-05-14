@@ -34,7 +34,7 @@ pub fn block_hash(parent: &Vec<u8>, author: &Vec<u8>, data: &Vec<Data>, game: &G
         }
     }
 
-    // if we do not sort the keys, the hashing will be diffirent on other machines
+    // if we do not sort the keys, the hashing will be diffirent on another machine
     let mut roster_keys: Vec<&PubKey> = game.roster.keys().collect();
     roster_keys.sort();
     for id in roster_keys {

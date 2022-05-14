@@ -5,7 +5,6 @@ use std::{
     error::Error,
 };
 
-use rand::rngs::OsRng;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     net::{
@@ -63,7 +62,7 @@ where
     }
 
     pub async fn listen(&self) -> io::Result<()> {
-        log::info!("me {:?}", hex::encode(&self.key.public_key));
+        log::info!("me {}", hex::encode(&self.key.public_key));
 
         let lst = TcpListener::bind((
             self.config.host.clone(),
@@ -101,16 +100,7 @@ where
         let peer = (*self).clone();
 
         tokio::spawn(async move {
-            let (reader, writer) = stream.into_split();
-            let mut client = Arc::new(Client {
-                pubkey: Vec::new(),
-                ephemeral: k256::ecdh::EphemeralSecret::random(OsRng),
-                addr,
-                thin: false,
-                writer: Mutex::new(writer),
-                reader: Mutex::new(reader),
-                shared: Vec::new(),
-            });
+            let mut client = Client::new(stream, addr);
 
             let shared = k256::EncodedPoint::from(client.ephemeral.public_key());
             let shared = shared.as_bytes();
@@ -127,7 +117,6 @@ where
 
                 let shared = k256::PublicKey::from_sec1_bytes(&shared).unwrap();
                 let shared = client.ephemeral.diffie_hellman(&shared).raw_secret_bytes().to_vec();
-                log::debug!("shared {} {}", shared.len(), hex::encode(&shared));
                 if let Some(cl) = Arc::get_mut(&mut client) {
                     cl.pubkey = id;
                     cl.shared = shared;
@@ -155,21 +144,7 @@ where
 
                     match env {
                         Ok(env) => {
-                            match env {
-                                Envelope::AllKnown { all_known } => {
-                                    peer.on_all_known(all_known).await;
-                                }
-                                Envelope::Announce { id } => {
-                                    peer.on_announce(client.clone(), id).await;
-                                }
-                                Envelope::Remove { id } => {
-                                    peer.on_remove(client.clone(), id).await;
-                                }
-                                Envelope::Message(msg) => {
-                                    peer.handler.handle(peer.clone(), client.clone(), msg).await;
-                                }
-                                _ => {}
-                            }
+                            peer.handle_envelope(&client, env).await;
                         }
                         Err(e) => {
                             use tokio::io::ErrorKind;
@@ -177,12 +152,12 @@ where
                                 match e.kind() {
                                     ErrorKind::UnexpectedEof | ErrorKind::BrokenPipe => {}
                                     _ => {
-                                        log::error!("{}", e);
+                                        log::error!("read-aes: {}", e);
                                     }
                                 }
                             }
                             else {
-                                log::error!("{}", e);
+                                log::error!("read-aes: {}", e);
                             }
                             break
                         }
@@ -192,6 +167,24 @@ where
                 peer.disconnected(&client).await;
             }
         });
+    }
+
+    async fn handle_envelope(&self, client: &ClientPtr, env: Envelope<T::Msg>) {
+        match env {
+            Envelope::AllKnown { all_known } => {
+                self.on_all_known(all_known).await;
+            }
+            Envelope::Announce { id } => {
+                self.on_announce(client.clone(), id).await;
+            }
+            Envelope::Remove { id } => {
+                self.on_remove(client.clone(), id).await;
+            }
+            Envelope::Message(msg) => {
+                self.handler.handle(self.clone(), client.clone(), msg).await;
+            }
+            _ => {}
+        }
     }
     
     async fn disconnected(&self, client: &ClientPtr) {

@@ -11,8 +11,11 @@ use crate::{
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Messages<T> {
+    HighestBlock{hash: Vec<u8>, count: usize},
+    RequestBlocks{from: Vec<u8>, to: Vec<u8>},
+    Blocks {blocks: Vec<Block>},
     Share {data: Data},
     Play {game: Game},
-    ShareBlock { block: Block },
+    AddBlock { block: Block },
     UserData(T),
 }

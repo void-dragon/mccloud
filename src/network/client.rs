@@ -5,7 +5,7 @@ use rand::{rngs::OsRng, RngCore};
 use serde::de::DeserializeOwned;
 use tokio::{
     net::{
-        tcp::{OwnedWriteHalf, OwnedReadHalf}
+        tcp::{OwnedWriteHalf, OwnedReadHalf}, TcpStream
     },
     io::{AsyncWriteExt, AsyncReadExt},
     sync::Mutex
@@ -29,6 +29,19 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn new(stream: TcpStream, addr: SocketAddr) -> Arc<Self> {
+        let (reader, writer) = stream.into_split();
+        Arc::new(Client {
+            pubkey: Vec::new(),
+            ephemeral: k256::ecdh::EphemeralSecret::random(OsRng),
+            addr,
+            thin: false,
+            writer: Mutex::new(writer),
+            reader: Mutex::new(reader),
+            shared: Vec::new(),
+        })
+    }
+
     pub async fn write_aes(&self, data: &Vec<u8>) -> Result<(), anyhow::Error> {
         let mut iv = [0u8; 16];
         OsRng.fill_bytes(&mut iv);
@@ -84,7 +97,9 @@ impl Client {
 
     pub async fn shutdown(&self) {
         let mut w = self.writer.lock().await;
-        w.shutdown().await.unwrap();
+        if let Err(e) = w.shutdown().await {
+            log::error!("shutdown: {}", e);
+        }
     }
 }
 

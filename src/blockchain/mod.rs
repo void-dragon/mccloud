@@ -2,11 +2,13 @@ pub mod block;
 pub mod data;
 
 use std::{
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     path::{Path, PathBuf},
     collections::HashMap,
-    io::{Seek, Write}
+    io::{Seek, Write, SeekFrom}
 };
+
+use tokio::{fs::File, io::{AsyncSeekExt, AsyncReadExt}};
 
 use crate::{
     highlander::GameResult,
@@ -36,7 +38,7 @@ impl Blockchain {
         let idxname = folder.join("bc.idx");
 
         let index: HashMap<Vec<u8>, (u64, u64)> = if idxname.exists() {
-            let file = File::open(idxname).unwrap();
+            let file = std::fs::File::open(idxname).unwrap();
             rmp_serde::from_read(file).unwrap()
         }
         else {
@@ -62,6 +64,10 @@ impl Blockchain {
         }
     }
 
+    pub fn highest_block(&self) -> (Vec<u8>, usize) {
+        (self.highest_hash.clone(), self.index.len())
+    }
+
     pub fn add_to_cache(&mut self, data: Data) {
         self.bucket.push(data);
     }
@@ -81,10 +87,47 @@ impl Blockchain {
         block
     }
 
+    pub async fn get_blocks(&self, from: Vec<u8>, to: Vec<u8>) -> Result<Vec<Block>, anyhow::Error> {
+        let mut blocks = Vec::new();
+
+        let filename = self.folder.join("bc.db");
+        let mut file = File::open(filename).await?;
+        let mut index = to;
+        log::debug!("index keys:");
+        for (idx, pos) in self.index.iter() {
+            println!("{} {:?}", hex::encode(idx), pos);
+        }
+        while index != from {
+            if let Some(pos) = self.index.get(&index) {
+                file.seek(SeekFrom::Start(pos.0)).await?;
+                let mut buffer = vec![0u8; pos.1 as usize];
+                file.read_exact(&mut buffer).await?;
+                let block: Block = rmp_serde::from_slice(&buffer)?;
+                let parent = block.parent.clone();
+
+                if !block.validate() {
+                    log::warn!("invalid block:\n{}", hex::encode(&block.hash));
+                }
+
+                blocks.push(block);
+                index = parent;
+            }
+            else {
+                log::error!("could new read block:\n{}", hex::encode(index));
+                break
+            }
+        }
+
+        blocks.reverse();
+
+        Ok(blocks)
+    }
+
     pub fn add_new_block(&mut self, block: Block) {
         if block.validate() {
             if self.highest_hash == block.parent {
                 self.save_block(&block);
+                self.highest_hash = block.hash.clone();
             }
             else {
                 log::error!(
@@ -119,7 +162,7 @@ impl Blockchain {
 
     pub fn save_index(&self) {
         let filename = self.folder.join("bc.idx");
-        let mut file = File::create(filename).unwrap();
+        let mut file = std::fs::File::create(filename).unwrap();
         let data = rmp_serde::to_vec_named(&self.index).unwrap();
         file.write_all(&data).unwrap();
     }
