@@ -1,6 +1,10 @@
 use std::error::Error;
 
-use k256::ecdsa::{Signature, SigningKey, signature::{Signer, Verifier}, VerifyingKey};
+use k256::ecdsa::{
+    SigningKey,
+    signature::{Signer, Verifier, Signature},
+    VerifyingKey
+};
 
 
 pub type PubKey = Vec<u8>;
@@ -12,7 +16,7 @@ pub type PubKey = Vec<u8>;
 pub struct Key {
     /// The private key.
     pub private_key: k256::SecretKey,
-    /// The bytes of the public key in DER format.
+    /// The bytes of the public key in SEC1 format.
     pub public_key: Vec<u8>,
 }
 
@@ -51,7 +55,7 @@ impl Key {
 
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
         let signer: SigningKey = self.private_key.clone().into();
-        let sig: Signature = signer.sign(data);
+        let sig: k256::ecdsa::Signature = signer.sign(data);
         let sign = sig.to_vec();
 
         Ok(sign)
@@ -59,7 +63,7 @@ impl Key {
 
     pub fn validate(data: &[u8], pkey: &[u8], sign: &[u8]) -> Result<(), anyhow::Error> {
         let verifer = VerifyingKey::from_sec1_bytes(pkey)?;
-        let sign = Signature::from_der(sign)?;
+        let sign = k256::ecdsa::Signature::from_bytes(sign)?;
         Ok(verifer.verify(data, &sign)?)
     }
 }
