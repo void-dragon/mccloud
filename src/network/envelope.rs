@@ -12,7 +12,9 @@ pub enum Envelope<T> {
         shared: PubKey,
         thin: bool
     },
-    AllKnown { all_known: Vec<PubKey>},
+    AllKnown { 
+        all_known: Vec<serde_bytes::ByteBuf>
+    },
     Announce {
         #[serde(with="serde_bytes")]
         id: PubKey

@@ -64,6 +64,8 @@ where
     pub async fn listen(&self) -> io::Result<()> {
         log::info!("me {}", hex::encode(&self.key.public_key));
 
+        self.all_known.lock().await.insert(self.key.public_key.clone());
+
         let lst = TcpListener::bind((
             self.config.host.clone(),
             self.config.port
@@ -128,7 +130,10 @@ where
                 peer.handler.init(peer.clone(), client.clone()).await;
 
                 if !client.thin {
-                    let all_known = peer.all_known.lock().await.iter().cloned().collect();
+                    let all_known = peer.all_known.lock().await
+                        .iter()
+                        .map(|n| serde_bytes::ByteBuf::from(n.clone()))
+                        .collect();
                     let msg = Envelope::<T::Msg>::AllKnown { all_known }.to_bytes().unwrap();
                     check!(client.write_aes(&msg).await);
                 }
@@ -233,10 +238,12 @@ where
         }
     }
 
-    async fn on_all_known(&self, all_known: Vec<PubKey>) {
+    async fn on_all_known(&self, all_known: Vec<serde_bytes::ByteBuf>) {
         log::debug!("allknown");
         let mut my_known = self.all_known.lock().await;
-        my_known.extend(all_known);
+        for buf in all_known {
+            my_known.insert(buf.into_vec());
+        }
     }
 
     async fn on_remove(&self, client: ClientPtr, id: PubKey) {

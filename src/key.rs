@@ -9,6 +9,7 @@ use k256::ecdsa::{
 
 pub type PubKey = Vec<u8>;
 
+
 ///
 /// A convenience abstraction over the elliptic curve algorithms provided by OpenSSL.
 /// 
