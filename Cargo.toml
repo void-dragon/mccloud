@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 aes = "*"
 anyhow = "*"
-cbc = {verion = "0.1.2", features = ["alloc"]}
+cbc = {version = "0.1.2", features = ["alloc"]}
 clap = {version = "*", features = ["derive"]}
 env_logger = "*"
 hex = "*"
