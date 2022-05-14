@@ -5,9 +5,9 @@ use mccloud::{
     network::{
         client::ClientPtr,
         peer::Peer,
-        handler::Handler, envelope::Envelope,
+        handler::Handler,
+        message::Message,
     },
-    messages::Messages,
     blockchain::Data,
     config::Config
 };
@@ -29,8 +29,6 @@ impl CliHandler {
 }
 
 impl Handler for CliHandler {
-    type Msg = Messages<u8>;
-
     fn new(_config: &Config) -> Self {
         Self { }
     }
@@ -42,9 +40,8 @@ impl Handler for CliHandler {
             log::debug!("init");
             let data = b"shrouble".to_vec();
             let data = Data::build(&peer.key, data);
-            let msg = Messages::<u8>::Share { data };
-            let env: Envelope<Messages<u8>> = msg.into();
-            let data = env.to_bytes().unwrap();
+            let msg = Message::Share { data };
+            let data = msg.to_bytes().unwrap();
             log::debug!("send data share");
             client.write_aes(&data).await.unwrap();
         }
@@ -61,10 +58,10 @@ impl Handler for CliHandler {
         Box::pin(run(self, peer)) 
     }
     
-    fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Message) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Messages<u8>) {
+        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Message) {
             match msg {
                 _ => {}
                 // Messages::Play { game } => {

@@ -2,7 +2,6 @@ use std::{sync::Arc, net::SocketAddr};
 
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use rand::{rngs::OsRng, RngCore};
-use serde::de::DeserializeOwned;
 use tokio::{
     net::{
         tcp::{OwnedWriteHalf, OwnedReadHalf}, TcpStream
@@ -13,7 +12,7 @@ use tokio::{
 
 use crate::key::PubKey;
 
-use super::envelope::Envelope;
+use super::message::Message;
 
 pub type AesCbcEnc = cbc::Encryptor<aes::Aes256>;
 pub type AesCbcDec = cbc::Decryptor<aes::Aes256>;
@@ -68,7 +67,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn read_aes<T: DeserializeOwned>(&self) -> Result<Envelope<T>, anyhow::Error> {
+    pub async fn read_aes(&self) -> Result<Message, anyhow::Error> {
         let mut reader = self.reader.lock().await;
         let mut size_bytes = [0; 4];
         reader.read_exact(&mut size_bytes).await?;
@@ -84,7 +83,7 @@ impl Client {
         Ok(rmp_serde::from_slice(&data)?)
     }
 
-    pub async fn read<T: DeserializeOwned>(&self) -> Result<Envelope<T>, anyhow::Error> {
+    pub async fn read(&self) -> Result<Message, anyhow::Error> {
         let mut reader = self.reader.lock().await;
         let mut size_bytes = [0; 4];
         reader.read_exact(&mut size_bytes).await?;

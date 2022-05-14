@@ -5,13 +5,11 @@ use crate::{
     config::Config
 };
 
-use super::client::ClientPtr;
+use super::{client::ClientPtr, message::Message};
 
 pub mod daemon;
 
 pub trait Handler: Send + Sync + Clone {
-    type Msg;
-
     fn new(config: &Config) -> Self;
 
     fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
@@ -22,7 +20,7 @@ pub trait Handler: Send + Sync + Clone {
     where
         Self: Sync + 'a;
 
-    fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Self::Msg) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+    fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Message) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a;
 }

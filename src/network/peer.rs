@@ -5,7 +5,6 @@ use std::{
     error::Error,
 };
 
-use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     net::{
         TcpListener,
@@ -19,7 +18,7 @@ use crate::{
     config::Config,
     key::{Key, PubKey},
     network::{
-        envelope::Envelope,
+        message::Message,
         handler::Handler,
     },
 };
@@ -47,7 +46,6 @@ pub struct Peer<T> where T: Handler + ?Sized {
 impl<T> Peer<T> 
 where 
     T: Handler + 'static,
-    T::Msg: Serialize + DeserializeOwned + Send + Sync + std::fmt::Debug
 {
     pub fn new(config: Config) -> Self {
         let handler = Arc::new(T::new(&config));
@@ -106,15 +104,15 @@ where
 
             let shared = k256::EncodedPoint::from(client.ephemeral.public_key());
             let shared = shared.as_bytes();
-            let greet = Envelope::<T::Msg>::Greeting { 
+            let greet = Message::Greeting { 
                 id: peer.key.public_key.clone(),
                 shared: shared.to_vec(),
                 thin: peer.config.thin,
             }.to_bytes().unwrap();
             client.write(&greet).await.unwrap();
 
-            let res: Envelope<T::Msg> = client.read().await.unwrap();
-            if let Envelope::Greeting { id, thin, shared } = res {
+            let res = client.read().await.unwrap();
+            if let Message::Greeting { id, thin, shared } = res {
                 log::info!("id {}", hex::encode(&id));
 
                 let shared = k256::PublicKey::from_sec1_bytes(&shared).unwrap();
@@ -134,12 +132,12 @@ where
                         .iter()
                         .map(|n| serde_bytes::ByteBuf::from(n.clone()))
                         .collect();
-                    let msg = Envelope::<T::Msg>::AllKnown { all_known }.to_bytes().unwrap();
+                    let msg = Message::AllKnown { all_known }.to_bytes().unwrap();
                     check!(client.write_aes(&msg).await);
                 }
 
                 if !peer.config.thin {
-                    let msg = Envelope::<T::Msg>::Announce { id: peer.key.public_key.clone() };
+                    let msg = Message::Announce { id: peer.key.public_key.clone() };
                     let msg = msg.to_bytes().unwrap();
                     check!(client.write_aes(&msg).await);
                 }
@@ -174,21 +172,20 @@ where
         });
     }
 
-    async fn handle_envelope(&self, client: &ClientPtr, env: Envelope<T::Msg>) {
+    async fn handle_envelope(&self, client: &ClientPtr, env: Message) {
         match env {
-            Envelope::AllKnown { all_known } => {
+            Message::AllKnown { all_known } => {
                 self.on_all_known(all_known).await;
             }
-            Envelope::Announce { id } => {
+            Message::Announce { id } => {
                 self.on_announce(client.clone(), id).await;
             }
-            Envelope::Remove { id } => {
+            Message::Remove { id } => {
                 self.on_remove(client.clone(), id).await;
             }
-            Envelope::Message(msg) => {
-                self.handler.handle(self.clone(), client.clone(), msg).await;
+            _ => {
+                self.handler.handle(self.clone(), client.clone(), env).await;
             }
-            _ => {}
         }
     }
     
@@ -199,11 +196,11 @@ where
         self.all_known.lock().await.remove(&client.pubkey);
 
         if !client.thin {
-            check!(self.broadcast(Envelope::Remove{id: client.pubkey.clone()}).await);
+            check!(self.broadcast(Message::Remove{id: client.pubkey.clone()}).await);
         }
     }
     
-    pub async fn broadcast(&self, msg: Envelope<T::Msg>) -> Result<(), Box<dyn Error>> {
+    pub async fn broadcast(&self, msg: Message) -> Result<(), Box<dyn Error>> {
         let data = msg.to_bytes()?;
 
         let clients = self.clients.lock().await;
@@ -215,7 +212,7 @@ where
         Ok(())
     }
 
-    pub async fn broadcast_except(&self, msg: Envelope<T::Msg>, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
+    pub async fn broadcast_except(&self, msg: Message, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
         let data = msg.to_bytes()?;
 
         let clients = self.clients.lock().await;
@@ -234,7 +231,7 @@ where
         let already_known = self.all_known.lock().await.insert(id.clone());
         if already_known {
             log::debug!("propergate announce {}", hex::encode(&id));
-            check!(self.broadcast_except(Envelope::Announce { id }, &client).await);
+            check!(self.broadcast_except(Message::Announce { id }, &client).await);
         }
     }
 
@@ -251,7 +248,7 @@ where
         let already_known = self.all_known.lock().await.remove(&id);
         if already_known {
             log::debug!("propergate remove {}", hex::encode(&id));
-            check!(self.broadcast_except(Envelope::Announce { id }, &client).await);
+            check!(self.broadcast_except(Message::Announce { id }, &client).await);
         }
     }
 }
