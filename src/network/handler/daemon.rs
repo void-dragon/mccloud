@@ -128,7 +128,7 @@ where
         *self.state.lock().await = State::Idle;
     }
 
-    async fn on_highest_hash(&self, peer: Peer<Self>, client: ClientPtr, hash: Vec<u8>, count: usize) {
+    async fn on_highest_hash(&self, _peer: Peer<Self>, client: ClientPtr, hash: Vec<u8>, count: usize) {
         let (myhash, mycount) = self.blockchain.lock().await.highest_block();
         
         if myhash != hash && mycount < count {
@@ -138,7 +138,7 @@ where
         }
     }
 
-    async fn on_request_blocks(&self, peer: Peer<Self>, client: ClientPtr, from: Vec<u8>, to: Vec<u8>) {
+    async fn on_request_blocks(&self, _peer: Peer<Self>, client: ClientPtr, from: Vec<u8>, to: Vec<u8>) {
         log::debug!("request blocks:\nfrom: {}\nto:   {}", hex::encode(&from), hex::encode(&to));
 
         let blocks = self.blockchain.lock().await.get_blocks(from, to).await.unwrap();
@@ -147,7 +147,7 @@ where
         client.write_aes(&env.to_bytes().unwrap()).await.unwrap();
     }
 
-    async fn on_blocks(&self, peer: Peer<Self>, client: ClientPtr, blocks: Vec<Block>) {
+    async fn on_blocks(&self, _peer: Peer<Self>, _client: ClientPtr, blocks: Vec<Block>) {
         let mut bc = self.blockchain.lock().await;
 
         for block in blocks {
