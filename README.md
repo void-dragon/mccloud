@@ -45,3 +45,5 @@ match up the game plan create on the local node, the block is resisted.
 #### Delayed Game
 The node waits until all other nodes in his game path have send there choices,
 to calculate the perfect choices to win.
+And with this said, we have already the solution, if the last node which send its choices, wins,
+then we reject the game, because it is possibly fraudolent and just start a new one.
