@@ -1,4 +1,3 @@
-
 use std::{pin::Pin, future::Future};
 
 use mccloud::{
@@ -23,13 +22,13 @@ macro_rules! check {
 
 
 #[derive(Clone)]
-pub struct CliHandler {
+pub struct TestHandler {
 }
 
-impl CliHandler {
+impl TestHandler {
 }
 
-impl Handler for CliHandler {
+impl Handler for TestHandler {
     fn new(_config: &Config) -> Self {
         Self { }
     }
@@ -37,7 +36,7 @@ impl Handler for CliHandler {
     fn init<'a>(&'a self, peer: Peer<Self>, client: ClientPtr) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, peer: Peer<CliHandler>, client: ClientPtr) {
+        async fn run(_self: &TestHandler, peer: Peer<TestHandler>, client: ClientPtr) {
             log::debug!("init");
             let data = b"shrouble".to_vec();
             let data = Data::build(&peer.key, data);
@@ -53,7 +52,7 @@ impl Handler for CliHandler {
     fn shutdown<'a>(&'a self, peer: Peer<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>) {
+        async fn run(_self: &TestHandler, _peer: Peer<TestHandler>) {
         }
 
         Box::pin(run(self, peer)) 
@@ -62,7 +61,7 @@ impl Handler for CliHandler {
     fn handle<'a>(&'a self, peer: Peer<Self>, client: ClientPtr, msg: Message) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
     where
         Self: Sync + 'a {
-        async fn run(_self: &CliHandler, _peer: Peer<CliHandler>, _client: ClientPtr, msg: Message) {
+        async fn run(_self: &TestHandler, _peer: Peer<TestHandler>, _client: ClientPtr, msg: Message) {
             match msg {
                 _ => {}
                 // Messages::Play { game } => {

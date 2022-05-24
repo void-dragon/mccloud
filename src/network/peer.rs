@@ -11,7 +11,7 @@ use tokio::{
         TcpStream,
     },
     io,
-    sync::Mutex, select,
+    sync::{Mutex, Notify}, select,
 };
 
 use crate::{
@@ -38,6 +38,7 @@ macro_rules! check {
 pub struct Peer<T> where T: Handler + ?Sized {
     pub key: Arc<Key>,
     pub config: Config,
+    close: Arc<Notify>,
     clients: Arc<Mutex<HashMap<SocketAddr, ClientPtr>>>,
     pub all_known: Arc<Mutex<HashSet<PubKey>>>,
     pub handler: Arc<T>,
@@ -53,10 +54,15 @@ where
         Self {
             key: Arc::new(Key::new()),
             config: config,
+            close: Arc::new(Notify::new()),
             clients: Arc::new(Mutex::new(HashMap::new())),
             all_known: Arc::new(Mutex::new(HashSet::new())),
             handler,
         }
+    }
+
+    pub fn shutdown(&self) {
+        self.close.notify_one();
     }
 
     pub async fn listen(&self) -> io::Result<()> {
@@ -77,9 +83,10 @@ where
 
         loop {
             select! {
+                _ = self.close.notified() => {
+                    break
+                }
                 _ = tokio::signal::ctrl_c() => {
-                    log::info!("begin shutdown");
-                    self.handler.shutdown((*self).clone()).await;
                     break
                 }
                 Ok((socket, addr)) = lst.accept() => {
@@ -87,6 +94,9 @@ where
                 }
             }
         }
+
+        log::info!("begin shutdown");
+        self.handler.shutdown((*self).clone()).await;
 
         let clients = self.clients.lock().await;
         for cl in clients.values() {
