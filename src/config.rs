@@ -12,6 +12,15 @@ pub struct ClientConfig {
 ///
 /// The configuration of a single [Peer](`crate::network::peer::Peer`).
 /// 
+/// **TOML Example:**
+/// ```toml
+/// host = "127.0.0.1"
+/// port = 39093
+/// folder = "data/"
+/// thin = false
+/// clients = []
+/// ```
+/// 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     /// The ip on which to listen. Defaults to `127.0.0.1`.
