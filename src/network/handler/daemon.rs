@@ -40,14 +40,12 @@ pub struct DaemonHandler {
     blockchain: Arc<Mutex<Blockchain>>,
 }
 
-impl DaemonHandler
-where 
-{
+impl DaemonHandler {
     async fn on_share(&self, peer: Peer<Self>, client: ClientPtr, data: Data) {
         self.blockchain.lock().await.add_to_cache(data.clone());
 
         let msg = Message::Share { data };
-        check!(peer.broadcast_except(msg, &client).await);
+        check!(peer.broadcast(msg, Some(&client), None).await);
 
         let mut state = self.state.lock().await;
 
@@ -72,7 +70,7 @@ where
             }
             else {
                 let msg = Message::Play { game };
-                check!(peer.broadcast(msg).await);
+                check!(peer.broadcast(msg, None, None).await);
             }
         }
     }
@@ -83,7 +81,7 @@ where
         let block = self.blockchain.lock().await.generate_new_block(result, &peer.key);
         block.validate();
         let msg = Message::AddBlock { block };
-        check!(peer.broadcast(msg).await);
+        check!(peer.broadcast(msg, None, None).await);
         *self.state.lock().await = State::Idle;
     }
 
@@ -92,7 +90,7 @@ where
         hl.add_game(game.clone());
 
         let msg = Message::Play { game };
-        check!(peer.broadcast_except(msg, &client).await);
+        check!(peer.broadcast(msg, Some(&client), None).await);
 
         if hl.is_filled() {
             let result = hl.evaluate(&peer.key);
@@ -112,7 +110,7 @@ where
         self.blockchain.lock().await.add_new_block(block.clone());
 
         let msg = Message::AddBlock { block };
-        check!(peer.broadcast_except(msg, &client).await);
+        check!(peer.broadcast(msg, Some(&client), None).await);
         *self.state.lock().await = State::Idle;
     }
 
@@ -142,9 +140,7 @@ where
     }
 }
 
-impl Handler for DaemonHandler
-where
-{
+impl Handler for DaemonHandler {
 
     fn new(config: &Config) -> Self {
         Self {
@@ -161,7 +157,7 @@ where
         {
             let (hash, count) = _self.blockchain.lock().await.highest_block();
             let msg = Message::HighestBlock { hash, count };
-            check!(_peer.broadcast(msg).await);
+            check!(_peer.broadcast(msg, None, None).await);
         }
 
         Box::pin(run(self, peer, client)) 

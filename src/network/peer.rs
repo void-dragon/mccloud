@@ -206,30 +206,28 @@ where
         self.all_known.lock().await.remove(&client.pubkey);
 
         if !client.thin {
-            check!(self.broadcast(Message::Remove{id: client.pubkey.clone()}).await);
+            check!(self.broadcast(Message::Remove{id: client.pubkey.clone()}, None, None).await);
         }
     }
-    
-    pub async fn broadcast(&self, msg: Message) -> Result<(), Box<dyn Error>> {
+
+    pub async fn broadcast(&self, msg: Message, ex: Option<&ClientPtr>, thin: Option<bool>) -> Result<(), Box<dyn Error>> {
         let data = msg.to_bytes()?;
 
+        let thin = thin.unwrap_or(false);
         let clients = self.clients.lock().await;
 
-        for cl in clients.values() {
-            cl.write_aes(&data).await?;
+        if let Some(ex) = ex {
+            for cl in clients.values() {
+                if cl.addr != ex.addr && thin || !cl.thin {
+                    cl.write_aes(&data).await?;
+                }
+            }
         }
-
-        Ok(())
-    }
-
-    pub async fn broadcast_except(&self, msg: Message, ex: &ClientPtr) -> Result<(), Box<dyn Error>> {
-        let data = msg.to_bytes()?;
-
-        let clients = self.clients.lock().await;
-
-        for cl in clients.values() {
-            if cl.addr != ex.addr {
-                cl.write_aes(&data).await?;
+        else {
+            for cl in clients.values() {
+                if thin || !cl.thin {
+                    cl.write_aes(&data).await?;
+                }
             }
         }
 
@@ -241,7 +239,7 @@ where
         let already_known = self.all_known.lock().await.insert(id.clone());
         if already_known {
             log::debug!("propergate announce {}", hex::encode(&id));
-            check!(self.broadcast_except(Message::Announce { id }, &client).await);
+            check!(self.broadcast(Message::Announce { id }, Some(&client), None).await);
         }
     }
 
@@ -258,7 +256,7 @@ where
         let already_known = self.all_known.lock().await.remove(&id);
         if already_known {
             log::debug!("propergate remove {}", hex::encode(&id));
-            check!(self.broadcast_except(Message::Announce { id }, &client).await);
+            check!(self.broadcast(Message::Announce { id }, Some(&client), None).await);
         }
     }
 }
