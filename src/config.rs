@@ -7,6 +7,8 @@ use serde::{Serialize, Deserialize};
 pub struct ClientConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub reconnect: bool,
 }
 
 ///

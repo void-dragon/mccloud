@@ -2,7 +2,7 @@ use std::{
     net::SocketAddr,
     sync::Arc,
     collections::{HashMap, HashSet},
-    error::Error,
+    error::Error, time::Duration,
 };
 
 use tokio::{
@@ -78,7 +78,7 @@ where
         for cl in &self.config.clients {
             let stream = TcpStream::connect((cl.host.clone(), cl.port)).await?;
             let addr = stream.peer_addr()?;
-            self.accept(stream, addr);
+            self.accept(stream, addr, cl.reconnect);
         }
 
         loop {
@@ -90,7 +90,7 @@ where
                     break
                 }
                 Ok((socket, addr)) = lst.accept() => {
-                    self.accept(socket, addr);
+                    self.accept(socket, addr, false);
                 }
             }
         }
@@ -106,7 +106,7 @@ where
         Ok(())
     }
 
-    fn accept(&self, stream: TcpStream, addr: SocketAddr) {
+    fn accept(&self, stream: TcpStream, addr: SocketAddr, reconnect: bool) {
         let peer = (*self).clone();
 
         tokio::spawn(async move {
@@ -176,6 +176,10 @@ where
                 }
 
                 peer.disconnected(&client).await;
+
+                if reconnect {
+                    peer.try_reconnect(client.addr).await;
+                }
             }
         });
     }
@@ -206,6 +210,25 @@ where
         if !client.thin {
             check!(self.broadcast(Message::Remove{id: client.pubkey.clone()}, None, None).await);
         }
+    }
+
+    async fn try_reconnect(&self, addr: SocketAddr) {
+        let peer = (*self).clone();
+
+        tokio::spawn(async move {
+            loop {
+                log::debug!("try reconnect to {:?}", addr);
+
+                if let Ok(stream) = TcpStream::connect(addr).await {
+                    let addr = stream.peer_addr().unwrap();
+                    peer.accept(stream, addr, true);
+                    break;
+                }
+                else {
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                }
+            }
+        });
     }
 
     pub async fn broadcast(&self, msg: Message, ex: Option<&ClientPtr>, thin: Option<bool>) -> Result<(), Box<dyn Error>> {

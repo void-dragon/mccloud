@@ -86,22 +86,29 @@ impl DaemonHandler {
     }
 
     async fn on_game(&self, peer: Peer<Self>, client: ClientPtr, game: Game) {
-        let mut hl = self.highlander.lock().await;
-        hl.add_game(game.clone());
+        let state = self.state.lock().await;
+        
+        if *state == State::Play { 
+            let mut hl = self.highlander.lock().await;
+            hl.add_game(game.clone());
 
-        let msg = Message::Play { game };
-        check!(peer.broadcast(msg, Some(&client), None).await);
+            let msg = Message::Play { game };
+            check!(peer.broadcast(msg, Some(&client), None).await);
 
-        if hl.is_filled() {
-            let result = hl.evaluate(&peer.key);
+            if hl.is_filled() {
+                let result = hl.evaluate(&peer.key);
 
-            if result.winner == peer.key.public_key {
-                self.generate_new_block(&peer, result).await;
+                if result.winner == peer.key.public_key {
+                    self.generate_new_block(&peer, result).await;
+                }
+                else {
+                    *self.state.lock().await = State::ExpectBlock;
+                    log::info!("waiting for new block");
+                }
             }
-            else {
-                *self.state.lock().await = State::ExpectBlock;
-                log::info!("waiting for new block");
-            }
+        }
+        else {
+            log::error!("got game while not playing");
         }
     }
 

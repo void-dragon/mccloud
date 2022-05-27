@@ -41,6 +41,7 @@ async fn main() {
         clients: vec![ClientConfig {
             host: args.host.clone(),
             port: args.port,
+            reconnect: true,
         }],
     };
     let peer = Peer::<CliHandler>::new(config);
