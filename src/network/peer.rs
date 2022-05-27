@@ -137,7 +137,7 @@ where
 
                 peer.handler.init(peer.clone(), client.clone()).await;
 
-                if !client.thin {
+                if !client.thin  && !peer.config.thin {
                     let all_known = peer.all_known.lock().await
                         .iter()
                         .map(|n| serde_bytes::ByteBuf::from(n.clone()))
@@ -145,11 +145,9 @@ where
                     let msg = Message::AllKnown { all_known }.to_bytes().unwrap();
                     check!(client.write_aes(&msg).await);
 
-                    if !peer.config.thin {
-                        let msg = Message::Announce { id: peer.key.public_key.clone() };
-                        let msg = msg.to_bytes().unwrap();
-                        check!(client.write_aes(&msg).await);
-                    }
+                    let msg = Message::Announce { id: peer.key.public_key.clone() };
+                    let msg = msg.to_bytes().unwrap();
+                    check!(client.write_aes(&msg).await);
                 }
 
                 loop {
