@@ -144,12 +144,12 @@ where
                         .collect();
                     let msg = Message::AllKnown { all_known }.to_bytes().unwrap();
                     check!(client.write_aes(&msg).await);
-                }
 
-                if !peer.config.thin {
-                    let msg = Message::Announce { id: peer.key.public_key.clone() };
-                    let msg = msg.to_bytes().unwrap();
-                    check!(client.write_aes(&msg).await);
+                    if !peer.config.thin {
+                        let msg = Message::Announce { id: peer.key.public_key.clone() };
+                        let msg = msg.to_bytes().unwrap();
+                        check!(client.write_aes(&msg).await);
+                    }
                 }
 
                 loop {
